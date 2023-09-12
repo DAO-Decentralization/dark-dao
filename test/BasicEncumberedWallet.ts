@@ -60,9 +60,7 @@ describe('BasicEncumberedWallet', () => {
 			const publicKey = await wallet.getPublicKey(0);
 
 			// Should fail to make a second wallet at the same index
-			const createWalletTx2 = await wallet.createWallet(0);
-			const gasUsed2 = (await createWalletTx2.wait()).gasUsed;
-			expect(gasUsed2.gt(100_000)).to.be.false;
+			await expect(wallet.createWallet(0)).to.be.reverted;
 
 			const publicKey2 = await wallet.getPublicKey(0);
 			expect(publicKey).to.equal(publicKey2);
