@@ -3,21 +3,14 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "./IEncumbrancePolicy.sol";
 import "./IEncumberedWallet.sol";
-import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 
 contract SnapshotDarkDAO is IEncumbrancePolicy {
     IEncumberedWallet public walletContract;
     mapping (address => uint256) private enrollmentTime;
-    bytes32 public votingPowerMerkleRoot;
+    mapping (address => mapping (bytes32 => address)) private allowedVoteSigner;
     
-    constructor(IEncumberedWallet encumberedWallet, bytes32 _votingPowerMerkleRoot) {
+    constructor(IEncumberedWallet encumberedWallet) {
         walletContract = encumberedWallet;
-        votingPowerMerkleRoot = _votingPowerMerkleRoot;
-    }
-    
-    function verifyVotingPower(bytes32[] memory proof, address addr, uint256 amount) public view returns (bool) {
-        bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(addr, amount))));
-        return MerkleProof.verify(proof, votingPowerMerkleRoot, leaf);
     }
     
     function notifyEncumbranceEnrollment(address wallet, uint256 expiration, bytes calldata) public {
@@ -30,7 +23,10 @@ contract SnapshotDarkDAO is IEncumbrancePolicy {
         return true;
     }
     
-    function typedDataAllowed(address, EIP712DomainParams memory domain, string calldata, bytes calldata) public pure returns (bool) {
-        return keccak256(bytes(domain.name)) != keccak256(bytes("snapshot"));
+    function typedDataAllowed(address, EIP712DomainParams memory domain, string calldata dataType, bytes calldata data) public view returns (bool) {
+        if (keccak256(bytes(domain.name)) != keccak256(bytes("snapshot"))) {
+            return true;
+        }
+        return false;
     }
 }

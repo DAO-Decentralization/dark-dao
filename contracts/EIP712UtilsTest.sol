@@ -8,7 +8,9 @@ import "./EIP712Utils.sol";
  * @dev Utility functions for generating and verifying EIP-712 signatures
  */
 contract EIP712UtilsTest {
-    bytes32 public constant EIP712_TYPE_HASH = EIP712Utils.EIP712_TYPE_HASH;
+    function getEIP712Type(uint256 usedParams) public pure returns (string memory) {
+        return EIP712Utils.getEIP712Type(usedParams);
+    }
     /**
      * @dev Returns the domain separator for EIP-712 typehash
      * @param params EIP-712 domain parameters

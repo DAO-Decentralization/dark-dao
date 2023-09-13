@@ -4,6 +4,7 @@ import {expect} from 'chai';
 import {ethers} from 'hardhat';
 import * as sapphire from '@oasisprotocol/sapphire-paratime';
 import {createEthereumMessage, derToEthSignature} from '../scripts/ethereum-signatures';
+import {getDomainParams} from '../scripts/eip712-builder';
 
 function getCurrentTime() {
 	return Math.floor(Date.now() / 1000);
@@ -33,7 +34,7 @@ describe('Snapshot Dark DAO', () => {
 
 		const wallet = await BasicEncumberedWallet.deploy();
 		const SnapshotDarkDAO = await ethers.getContractFactory('SnapshotDarkDAO');
-		const policy = await SnapshotDarkDAO.deploy(wallet.address, '0x0000000000000000000000000000000000000000000000000000000000000000');
+		const policy = await SnapshotDarkDAO.deploy(wallet.address);
 		return {owner, wallet, policy, eip712Utils, eip712UtilsTest};
 	}
 
@@ -76,7 +77,7 @@ describe('Snapshot Dark DAO', () => {
 
 			const structHash = await eip712Utils.hashStruct(typeString, encodedData);
 			expect(structHash).to.equal('0xc52c0ee5d84264471806290a3f2c4cecfc5490626bf912d01f240d7a274b371e');
-			const derSignature = await wallet.signTypedData(0, domain, typeString, encodedData);
+			const derSignature = await wallet.signTypedData(0, getDomainParams(domain), typeString, encodedData);
 			const address = await wallet.getAddress(0);
 
 			console.log('DER: ' + derSignature);
@@ -84,7 +85,7 @@ describe('Snapshot Dark DAO', () => {
 			console.log(['Ether Mail', '1', 1, domain.verifyingContract]);
 			console.log(typeString);
 			console.log(encodedData);
-			const dataHash = await eip712UtilsTest.getTypedDataHash(domain, typeString, encodedData);
+			const dataHash = await eip712UtilsTest.getTypedDataHash(getDomainParams(domain), typeString, encodedData);
 			console.log('Typed data hash:', dataHash);
 
 			const ethSig = derToEthSignature(derSignature, dataHash, address, false);
@@ -125,7 +126,7 @@ describe('Snapshot Dark DAO', () => {
 
 			expect(ethers.utils.verifyTypedData(domain, typedData.types, typedData.message, ethSig)).to.equal(address);
 		});
-		it('Should not sign a snapshot vote', async () => {
+		it('Should not sign an unknown snapshot vote type', async () => {
 			const {owner, wallet, policy, eip712Utils, eip712UtilsTest} = await deployAndEnter();
 			const address = await wallet.getAddress(0);
 			const typedData = {
@@ -149,7 +150,8 @@ describe('Snapshot Dark DAO', () => {
 					vote: 1,
 				},
 			};
-			const typeString = ethers.utils._TypedDataEncoder.getPrimaryType(typedData.types);
+			const typedDataEnc = ethers.utils._TypedDataEncoder.from(typedData.types);
+			const typeString = typedDataEnc.encodeType('Vote');
 			console.log('Type string: ' + typeString);
 			const encodedData = ethers.utils.hexConcat([
 				ethers.utils.hexZeroPad(typedData.message.from, 32),
@@ -157,14 +159,7 @@ describe('Snapshot Dark DAO', () => {
 				ethers.utils.hexZeroPad('0x01', 32),
 			]);
 
-			let failed = false;
-			try {
-				const derSignature = await wallet.signTypedData(0, typedData.domain, typeString, encodedData);
-			} catch {
-				failed = true;
-			}
-
-			expect(failed).to.be.true;
+			await expect(wallet.signTypedData(0, getDomainParams(typedData.domain), typeString, encodedData)).to.be.reverted;
 		}).timeout(10_000_000);
 	});
 });
