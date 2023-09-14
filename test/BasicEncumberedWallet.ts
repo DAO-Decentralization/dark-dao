@@ -73,7 +73,7 @@ describe('BasicEncumberedWallet', () => {
 			const response2 = await wallet.signMessage(0, createEthereumMessage('Hello world'));
 			console.log('Signature2:', response2);
 		});
-		it('Should enroll in an encumberment contract, with working encumberment', async () => {
+		it('Should enroll in an encumbrance contract, with working encumbrance', async () => {
 			const {owner, wallet, policy} = await deployPolicy();
 			await wallet.createWallet(0).then(async c => c.wait());
 			await wallet.enterEncumbranceContract(0, policy.address, getCurrentTime() + (60 * 60), '0x').then(async c => c.wait());
