@@ -33,8 +33,8 @@ describe('Snapshot Dark DAO', () => {
 		await eip712UtilsTest.deployed();
 
 		const wallet = await BasicEncumberedWallet.deploy();
-		const SnapshotDarkDAO = await ethers.getContractFactory('SnapshotDarkDAO');
-		const policy = await SnapshotDarkDAO.deploy(wallet.address);
+		const snapshotEncumbrancePolicy = await ethers.getContractFactory('SnapshotEncumbrancePolicy');
+		const policy = await snapshotEncumbrancePolicy.deploy(wallet.address);
 		return {owner, wallet, policy, eip712Utils, eip712UtilsTest};
 	}
 
@@ -161,5 +161,47 @@ describe('Snapshot Dark DAO', () => {
 
 			await expect(wallet.signTypedData(0, getDomainParams(typedData.domain), typeString, encodedData)).to.be.reverted;
 		}).timeout(10_000_000);
+		it('Should allow signing a whitelisted snapshot vote', async () => {
+			const {owner, wallet, policy, eip712Utils, eip712UtilsTest} = await deployAndEnter();
+			const address = await wallet.getAddress(0);
+			const typedData = {
+				types: {
+					Vote: [
+						{name: 'from', type: 'address'},
+						{name: 'space', type: 'string'},
+						{name: 'timestamp', type: 'uint64'},
+						{name: 'proposal', type: 'bytes32'},
+						{name: 'choice', type: 'uint32'},
+						{name: 'reason', type: 'string'},
+						{name: 'app', type: 'string'},
+						{name: 'metadata', type: 'string'},
+					],
+				},
+				domain: {
+					name: 'snapshot',
+					version: '0.1.4',
+				},
+				primaryType: 'Vote',
+				message: {
+					from: address,
+					space: 'bnb50000.eth',
+					timestamp: '1694651892',
+					proposal: '0x85cfd1e3f1fe4734f5e63b9f9578f8c5255696e0adab20b07ae48ae26d2be1fb',
+					choice: '1',
+					reason: '',
+					app: 'snapshot',
+					metadata: '{}',
+				},
+			};
+			const typedDataEnc = ethers.utils._TypedDataEncoder.from(typedData.types);
+			const typeString = typedDataEnc.encodeType('Vote');
+			console.log('Type string: ' + typeString);
+			console.log('Type string keccak: ' + ethers.utils.keccak256(ethers.utils.toUtf8Bytes(typeString)));
+			const encodedData = typedDataEnc.encodeData('Vote', typedData.message);
+			console.log(ethers.utils.hexDataSlice(encodedData, 32));
+
+			await expect(wallet.signTypedData(0, getDomainParams(typedData.domain), typeString, ethers.utils.hexDataSlice(encodedData, 32)))
+			    .to.be.revertedWith('Wrong vote signer');
+		});
 	});
 });
