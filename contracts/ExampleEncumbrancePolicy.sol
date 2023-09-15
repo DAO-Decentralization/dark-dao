@@ -19,14 +19,14 @@ contract ExampleEncumbrancePolicy is IEncumbrancePolicy {
         return walletContract.signEncumberedMessage(account, message);
     }
     
-    function messageAllowed(address, address, bytes calldata message) public pure returns (bool) {
+    function messageAllowed(address, bytes calldata message) public pure returns (bool) {
         if (message.length > 0 && message[0] == hex"19") {
             return false;
         }
         return true;
     }
     
-    function typedDataAllowed(address, address, EIP712DomainParams memory, string calldata, bytes calldata) public pure returns (bool) {
+    function typedDataAllowed(address, EIP712DomainParams memory, string calldata, bytes calldata) public pure returns (bool) {
         return true;
     }
 }

@@ -213,20 +213,22 @@ describe('Snapshot Dark DAO', () => {
 			console.log(ethers.utils.hexDataSlice(encodedData, 32));
 
 			await expect(wallet.signTypedData(0, getDomainParams(typedData.domain), typeString, ethers.utils.hexDataSlice(encodedData, 32)))
-			    .to.be.revertedWith('Wrong vote signer');
+			    .to.be.revertedWith('Typed data not allowed by encumbrance contract');
 		});
 		it('Should allow signing an authorized snapshot vote', async () => {
 			const {owner, wallet, policy, eip712Utils, eip712UtilsTest} = await deployAndEnter();
 			const address = await wallet.getAddress(0);
 			const typedData = getSnapshotVoteTypedData(address);
 		    const proposal = typedData.message.proposal;
-		    await expect(policy.selfVoteSigner(address, proposal)).to.not.be.reverted;
 			const typedDataEnc = ethers.utils._TypedDataEncoder.from(typedData.types);
 			const typeString = typedDataEnc.encodeType('Vote');
 			console.log('Type string: ' + typeString);
 			console.log('Type string keccak: ' + ethers.utils.keccak256(ethers.utils.toUtf8Bytes(typeString)));
 			const encodedData = ethers.utils.hexDataSlice(typedDataEnc.encodeData('Vote', typedData.message), 32);
 
+			// Expect signing to be functional after authorizing self to vote on this proposal
+			await expect(wallet.signTypedData(0, getDomainParams(typedData.domain), typeString, encodedData)).to.be.reverted;
+		    await expect(policy.selfVoteSigner(address, proposal)).to.not.be.reverted;
 			const derSignature = await wallet.signTypedData(0, getDomainParams(typedData.domain), typeString, encodedData);
 			const dataHash = await eip712UtilsTest.getTypedDataHash(getDomainParams(typedData.domain), typeString, encodedData);
 			const ethSig = derToEthSignature(derSignature, dataHash, address, false);

@@ -45,11 +45,11 @@ contract SnapshotEncumbrancePolicy is IEncumbrancePolicy, EIP712 {
         allowedVoteSigner[account][proposal] = signer;
     }
     
-    function messageAllowed(address, address, bytes calldata) public pure returns (bool) {
+    function messageAllowed(address, bytes calldata) public pure returns (bool) {
         return true;
     }
     
-    function typedDataAllowed(address addr, address signer, EIP712DomainParams memory domain, string calldata dataType, bytes calldata data) public view returns (bool) {
+    function typedDataAllowed(address addr, EIP712DomainParams memory domain, string calldata dataType, bytes calldata data) public view returns (bool) {
         // We would not like to leak the addresses account owners authorize
         require(msg.sender == address(walletContract) || msg.sender == accountOwner[addr], "Unauthorized");
         
@@ -62,8 +62,7 @@ contract SnapshotEncumbrancePolicy is IEncumbrancePolicy, EIP712 {
                 require(data.length == 256, "Incorrect vote data length");
                 SnapshotVote2 memory vote = abi.decode(data, (SnapshotVote2));
                 address voteSigner = allowedVoteSigner[addr][vote.proposal];
-                require(voteSigner != address(0) && signer == voteSigner, "Wrong vote signer");
-                return true;
+                return voteSigner == accountOwner[addr];
             }
             return false;
         }

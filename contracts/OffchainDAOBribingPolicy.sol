@@ -21,7 +21,7 @@ contract OffchainDAOBribingPolicy is IEncumbrancePolicy {
         enrollmentTime[wallet] = block.timestamp;
     }
     
-    function messageAllowed(address, address, bytes calldata message) public view returns (bool) {
+    function messageAllowed(address, bytes calldata message) public view returns (bool) {
         // Decode the vote
         try voteVerifier.decodeVote(message) returns (bytes32, uint256) {
             return false;
@@ -30,7 +30,7 @@ contract OffchainDAOBribingPolicy is IEncumbrancePolicy {
         }
     }
     
-    function typedDataAllowed(address, address, EIP712DomainParams memory, string calldata, bytes calldata) public pure returns (bool) {
+    function typedDataAllowed(address, EIP712DomainParams memory, string calldata, bytes calldata) public pure returns (bool) {
         return true;
     }
 }
