@@ -13,14 +13,19 @@ import "./IEncumberedWallet.sol";
 
 import {EIP712DomainParams, EIP712Utils} from "./EIP712Utils.sol";
 
+struct EncumberedAccount {
+    address owner;
+    uint256 index;
+}
+
 contract BasicEncumberedWallet is IEncumberedWallet {
     // Mapping to wallets; access must always be authorized
     mapping(address => mapping(uint => bytes)) private privateKeys;
     mapping(address => mapping(uint => bytes)) private publicKeys;
     mapping(address => mapping(uint => address)) private addresses;
-    
-    mapping(address => mapping(uint => IEncumbrancePolicy)) private encumbranceContract;
-    mapping(address => mapping(uint => uint256)) private encumbranceExpiry;
+    mapping(address => EncumberedAccount) private accounts;
+    mapping(address => IEncumbrancePolicy) private encumbranceContract;
+    mapping(address => uint256) private encumbranceExpiry;
     
     function ethAddressFromPublicKey(bytes memory q) public pure returns (address) {
         require(q.length == 64, "Incorrect bytes length");
@@ -37,6 +42,11 @@ contract BasicEncumberedWallet is IEncumberedWallet {
         );
     }
     
+    /**
+     * @notice Create a new wallet
+     * @param index Index of the new wallet. This number should be randomly
+     * sampled to protect against certain privacy-related side channel attacks.
+     */
     function createWallet(uint256 index) public {
         // Ensure that the wallet doesn't exist already
         require(publicKeys[msg.sender][index].length == 0, "Wallet exists");
@@ -55,7 +65,12 @@ contract BasicEncumberedWallet is IEncumberedWallet {
         require(publicKey.length > 0, "Public key length is 0");
         publicKeys[msg.sender][index] = publicKey;
         privateKeys[msg.sender][index] = privateKey;
-        addresses[msg.sender][index] = ethAddressFromPublicKey(BasicEncumberedWallet(address(this)).decompressPublicKey(publicKey));
+        address addr = ethAddressFromPublicKey(BasicEncumberedWallet(address(this)).decompressPublicKey(publicKey));
+        addresses[msg.sender][index] = addr;
+        accounts[addr] = EncumberedAccount({
+            owner: msg.sender,
+            index: index
+        });
     }
     
     function getPublicKey(uint256 walletIndex) public view returns (bytes memory) {
@@ -70,26 +85,17 @@ contract BasicEncumberedWallet is IEncumberedWallet {
         return walletAddress;
     }
     
-    function getEncumberedPublicKey(address owner, uint256 walletIndex) public view returns (bytes memory) {
-        IEncumbrancePolicy encContract = encumbranceContract[owner][walletIndex];
-        require(msg.sender == owner || msg.sender == address(encContract), "Not authorized");
-        bool encumbranceExpired = (block.timestamp > encumbranceExpiry[owner][walletIndex]);
-        require(msg.sender == owner || !encumbranceExpired, "Expired");
-        
-        bytes memory publicKey = publicKeys[owner][walletIndex];
-        return publicKey;
-    }
-    
     function enterEncumbranceContract(uint256 walletIndex, IEncumbrancePolicy policy, uint256 expiry, bytes calldata data) public {
         // TODO: Extend to multiple encumbrance contracts
         require(expiry > block.timestamp, "Already expired");
-        require(encumbranceExpiry[msg.sender][walletIndex] == 0 || encumbranceExpiry[msg.sender][walletIndex] < block.timestamp, "Already encumbered");
+        address account = addresses[msg.sender][walletIndex];
+        require(encumbranceExpiry[account] == 0 || encumbranceExpiry[account] < block.timestamp, "Already encumbered");
         // TODO: Require address to have been initialized
-        encumbranceContract[msg.sender][walletIndex] = policy;
-        encumbranceExpiry[msg.sender][walletIndex] = expiry;
+        encumbranceContract[account] = policy;
+        encumbranceExpiry[account] = expiry;
         
         // Notify the policy that encumbrance has begun
-        policy.notifyEncumbranceEnrollment(addresses[msg.sender][walletIndex], expiry, data);
+        policy.notifyEncumbranceEnrollment(msg.sender, account, expiry, data);
     }
     
     /*
@@ -101,11 +107,12 @@ contract BasicEncumberedWallet is IEncumberedWallet {
     */
     
     // NOTE: The encumbrance policy controls this
-    function messageAllowed(address owner, uint256 walletIndex, bytes calldata message) public view returns (bool) {
-        IEncumbrancePolicy encContract = encumbranceContract[owner][walletIndex];
+    function messageAllowed(address owner, uint256 walletIndex, address signer, bytes calldata message) public view returns (bool) {
+        address account = addresses[owner][walletIndex];
+        IEncumbrancePolicy encContract = encumbranceContract[account];
         require(msg.sender == owner || msg.sender == address(encContract), "Not authorized");
         
-        bool encumbranceExpired = (block.timestamp > encumbranceExpiry[owner][walletIndex]);
+        bool encumbranceExpired = (block.timestamp > encumbranceExpiry[account]);
         if (encumbranceExpired) {
             return true;
         }
@@ -114,21 +121,22 @@ contract BasicEncumberedWallet is IEncumberedWallet {
         // The user can't sign any messages the encumbrance contract reserves,
         // and the encumbrance contract can't sign any messages it does not reserve
         // TODO: Revisit if mutual exclusion is necessary
-        bool messageIsEncumbered = !encContract.messageAllowed(addresses[owner][walletIndex], message);
+        bool messageIsEncumbered = !encContract.messageAllowed(account, signer, message);
         return (!messageIsEncumbered && !isContract) || (messageIsEncumbered && isContract);
     }
     
-    function typedDataAllowed(address owner, uint256 walletIndex, EIP712DomainParams memory domain, string calldata dataType, bytes calldata data) private view returns (bool) {
-        IEncumbrancePolicy encContract = encumbranceContract[owner][walletIndex];
+    function typedDataAllowed(address owner, uint256 walletIndex, address signer, EIP712DomainParams memory domain, string calldata dataType, bytes calldata data) private view returns (bool) {
+        address account = addresses[owner][walletIndex];
+        IEncumbrancePolicy encContract = encumbranceContract[account];
         require(msg.sender == owner || msg.sender == address(encContract), "Not authorized");
         
-        bool encumbranceExpired = (block.timestamp > encumbranceExpiry[owner][walletIndex]);
+        bool encumbranceExpired = (block.timestamp > encumbranceExpiry[account]);
         if (encumbranceExpired) {
             return true;
         }
         
         bool isContract = (msg.sender == address(encContract));
-        bool messageIsEncumbered = !encContract.typedDataAllowed(addresses[owner][walletIndex], domain, dataType, data);
+        bool messageIsEncumbered = !encContract.typedDataAllowed(account, signer, domain, dataType, data);
         return (!messageIsEncumbered && !isContract) || (messageIsEncumbered && isContract);
     }
     
@@ -137,9 +145,10 @@ contract BasicEncumberedWallet is IEncumberedWallet {
         require(privateKey.length > 0, "Wallet does not exist");
         
         bool isTypedData = (message.length >= 2 && message[0] == hex"19" && message[1] == hex"01");
-        require(!isTypedData || encumbranceExpiry[owner][walletIndex] <= block.timestamp, "Typed data must be signed through signTypedData");
+        address account = addresses[owner][walletIndex];
+        require(!isTypedData || encumbranceExpiry[account] <= block.timestamp, "Typed data must be signed through signTypedData");
         
-        require(messageAllowed(msg.sender, walletIndex, message), "Message not allowed by encumbrance contract");
+        require(messageAllowed(owner, walletIndex, msg.sender, message), "Message not allowed by encumbrance contract");
         
         bytes32 messageHash = keccak256(message);
         bytes memory signature = Sapphire.sign(
@@ -159,16 +168,17 @@ contract BasicEncumberedWallet is IEncumberedWallet {
         return signMessageAuthorized(msg.sender, walletIndex, message);
     }
     
-    function signEncumberedMessage(address origin, uint256 walletIndex, bytes calldata message) public view returns (bytes memory) {
-        require(address(encumbranceContract[origin][walletIndex]) == msg.sender, "Not encumbered by sender");
-        require(block.timestamp < encumbranceExpiry[origin][walletIndex], "Rental expired");
-        return signMessageAuthorized(origin, walletIndex, message);
+    function signEncumberedMessage(address account, bytes calldata message) public view returns (bytes memory) {
+        require(address(encumbranceContract[account]) == msg.sender, "Not encumbered by sender");
+        require(block.timestamp < encumbranceExpiry[account], "Rental expired");
+        EncumberedAccount memory acc = accounts[account];
+        return signMessageAuthorized(acc.owner, acc.index, message);
     }
     
     function signTypedDataAuthorized(address owner, uint256 walletIndex, EIP712DomainParams memory domain, string calldata dataType, bytes calldata data) private view returns (bytes memory) {
         bytes memory privateKey = privateKeys[owner][walletIndex];
         require(privateKey.length > 0, "Wallet does not exist");
-        require(typedDataAllowed(owner, walletIndex, domain, dataType, data), "Typed data not allowed by encumbrance contract");
+        require(typedDataAllowed(owner, walletIndex, msg.sender, domain, dataType, data), "Typed data not allowed by encumbrance contract");
         
         // Calculate hash
         bytes32 messageHash = EIP712Utils.getTypedDataHash(domain, dataType, data);
@@ -190,5 +200,20 @@ contract BasicEncumberedWallet is IEncumberedWallet {
      */
     function signTypedData(uint256 walletIndex, EIP712DomainParams memory domain, string calldata dataType, bytes calldata data) public view returns (bytes memory) {
         return signTypedDataAuthorized(msg.sender, walletIndex, domain, dataType, data);
+    }
+    
+    /**
+     @notice Sign typed data. NOTE: The contents of the data are not type checked.
+     @param account The account that will sign the typed data.
+     @param domain EIP-712 domain
+     @param dataType Data type according to EIP-712
+     @param data Struct containing the data contents
+     @return DER-encoded signature
+     */
+    function signEncumberedTypedData(address account, EIP712DomainParams memory domain, string calldata dataType, bytes calldata data) public view returns (bytes memory) {
+        require(address(encumbranceContract[account]) == msg.sender, "Not encumbered by sender");
+        require(block.timestamp < encumbranceExpiry[account], "Rental expired");
+        EncumberedAccount memory acc = accounts[account];
+        return signTypedDataAuthorized(acc.owner, acc.index, domain, dataType, data);
     }
 }

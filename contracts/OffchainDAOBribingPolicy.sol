@@ -15,13 +15,13 @@ contract OffchainDAOBribingPolicy is IEncumbrancePolicy {
         voteVerifier = _voteVerifier;
     }
     
-    function notifyEncumbranceEnrollment(address wallet, uint256 expiration, bytes calldata) public {
+    function notifyEncumbranceEnrollment(address, address wallet, uint256 expiration, bytes calldata) public {
         require(msg.sender == address(walletContract), "Not wallet contract");
         require(expiration >= block.timestamp, "Expiration is in the past");
         enrollmentTime[wallet] = block.timestamp;
     }
     
-    function messageAllowed(address, bytes calldata message) public view returns (bool) {
+    function messageAllowed(address, address, bytes calldata message) public view returns (bool) {
         // Decode the vote
         try voteVerifier.decodeVote(message) returns (bytes32, uint256) {
             return false;
@@ -30,7 +30,7 @@ contract OffchainDAOBribingPolicy is IEncumbrancePolicy {
         }
     }
     
-    function typedDataAllowed(address, EIP712DomainParams memory, string calldata, bytes calldata) public pure returns (bool) {
+    function typedDataAllowed(address, address, EIP712DomainParams memory, string calldata, bytes calldata) public pure returns (bool) {
         return true;
     }
 }

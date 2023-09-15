@@ -10,6 +10,39 @@ function getCurrentTime() {
 	return Math.floor(Date.now() / 1000);
 }
 
+function getSnapshotVoteTypedData(address: string) {
+	const typedData = {
+		types: {
+			Vote: [
+				{name: 'from', type: 'address'},
+				{name: 'space', type: 'string'},
+				{name: 'timestamp', type: 'uint64'},
+				{name: 'proposal', type: 'bytes32'},
+				{name: 'choice', type: 'uint32'},
+				{name: 'reason', type: 'string'},
+				{name: 'app', type: 'string'},
+				{name: 'metadata', type: 'string'},
+			],
+		},
+		domain: {
+			name: 'snapshot',
+			version: '0.1.4',
+		},
+		primaryType: 'Vote',
+		message: {
+			from: address,
+			space: 'bnb50000.eth',
+			timestamp: '1694651892',
+			proposal: '0x85cfd1e3f1fe4734f5e63b9f9578f8c5255696e0adab20b07ae48ae26d2be1fb',
+			choice: '1',
+			reason: '',
+			app: 'snapshot',
+			metadata: '{}',
+		},
+	};
+	return typedData;
+}
+
 describe('Snapshot Dark DAO', () => {
 	async function deployWallet() {
 		// Contracts are deployed using the first signer/account by default
@@ -161,38 +194,17 @@ describe('Snapshot Dark DAO', () => {
 
 			await expect(wallet.signTypedData(0, getDomainParams(typedData.domain), typeString, encodedData)).to.be.reverted;
 		}).timeout(10_000_000);
-		it('Should allow signing a whitelisted snapshot vote', async () => {
+		it('Should not let the user re-authorize a proposal', async () => {
+		    const {owner, wallet, policy, eip712Utils, eip712UtilsTest} = await deployAndEnter();
+		    const address = await wallet.getAddress(0);
+		    const proposal = '0x85cfd1e3f1fe4734f5e63b9f9578f8c5255696e0adab20b07ae48ae26d2be1fb';
+		    await expect(policy.selfVoteSigner(address, proposal)).to.not.be.reverted;
+		    await expect(policy.setVoteSigner(address, proposal, '0x0000000000000000000000000000000000000001')).to.be.reverted;
+		});
+		it('Should not allow signing an unauthorized snapshot vote', async () => {
 			const {owner, wallet, policy, eip712Utils, eip712UtilsTest} = await deployAndEnter();
 			const address = await wallet.getAddress(0);
-			const typedData = {
-				types: {
-					Vote: [
-						{name: 'from', type: 'address'},
-						{name: 'space', type: 'string'},
-						{name: 'timestamp', type: 'uint64'},
-						{name: 'proposal', type: 'bytes32'},
-						{name: 'choice', type: 'uint32'},
-						{name: 'reason', type: 'string'},
-						{name: 'app', type: 'string'},
-						{name: 'metadata', type: 'string'},
-					],
-				},
-				domain: {
-					name: 'snapshot',
-					version: '0.1.4',
-				},
-				primaryType: 'Vote',
-				message: {
-					from: address,
-					space: 'bnb50000.eth',
-					timestamp: '1694651892',
-					proposal: '0x85cfd1e3f1fe4734f5e63b9f9578f8c5255696e0adab20b07ae48ae26d2be1fb',
-					choice: '1',
-					reason: '',
-					app: 'snapshot',
-					metadata: '{}',
-				},
-			};
+			const typedData = getSnapshotVoteTypedData(address);
 			const typedDataEnc = ethers.utils._TypedDataEncoder.from(typedData.types);
 			const typeString = typedDataEnc.encodeType('Vote');
 			console.log('Type string: ' + typeString);
@@ -202,6 +214,24 @@ describe('Snapshot Dark DAO', () => {
 
 			await expect(wallet.signTypedData(0, getDomainParams(typedData.domain), typeString, ethers.utils.hexDataSlice(encodedData, 32)))
 			    .to.be.revertedWith('Wrong vote signer');
+		});
+		it('Should allow signing an authorized snapshot vote', async () => {
+			const {owner, wallet, policy, eip712Utils, eip712UtilsTest} = await deployAndEnter();
+			const address = await wallet.getAddress(0);
+			const typedData = getSnapshotVoteTypedData(address);
+		    const proposal = typedData.message.proposal;
+		    await expect(policy.selfVoteSigner(address, proposal)).to.not.be.reverted;
+			const typedDataEnc = ethers.utils._TypedDataEncoder.from(typedData.types);
+			const typeString = typedDataEnc.encodeType('Vote');
+			console.log('Type string: ' + typeString);
+			console.log('Type string keccak: ' + ethers.utils.keccak256(ethers.utils.toUtf8Bytes(typeString)));
+			const encodedData = ethers.utils.hexDataSlice(typedDataEnc.encodeData('Vote', typedData.message), 32);
+
+			const derSignature = await wallet.signTypedData(0, getDomainParams(typedData.domain), typeString, encodedData);
+			const dataHash = await eip712UtilsTest.getTypedDataHash(getDomainParams(typedData.domain), typeString, encodedData);
+			const ethSig = derToEthSignature(derSignature, dataHash, address, false);
+			console.log(ethSig);
+			expect(ethers.utils.verifyTypedData(typedData.domain, typedData.types, typedData.message, ethSig)).to.equal(address);
 		});
 	});
 });

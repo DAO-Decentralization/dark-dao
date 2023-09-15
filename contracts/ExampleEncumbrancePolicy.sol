@@ -10,23 +10,23 @@ contract ExampleEncumbrancePolicy is IEncumbrancePolicy {
         walletContract = encumberedWallet;
     }
     
-    function notifyEncumbranceEnrollment(address, uint256 expiration, bytes calldata) public view {
+    function notifyEncumbranceEnrollment(address, address, uint256 expiration, bytes calldata) public view {
         require(msg.sender == address(walletContract), "Not wallet contract");
         require(expiration >= block.timestamp, "Expiration is in the past");
     }
     
-    function signOnBehalf(address origin, uint256 walletIndex, bytes calldata message) public view returns (bytes memory) {
-        return walletContract.signEncumberedMessage(origin, walletIndex, message);
+    function signOnBehalf(address account, bytes calldata message) public view returns (bytes memory) {
+        return walletContract.signEncumberedMessage(account, message);
     }
     
-    function messageAllowed(address, bytes calldata message) public pure returns (bool) {
+    function messageAllowed(address, address, bytes calldata message) public pure returns (bool) {
         if (message.length > 0 && message[0] == hex"19") {
             return false;
         }
         return true;
     }
     
-    function typedDataAllowed(address, EIP712DomainParams memory, string calldata, bytes calldata) public pure returns (bool) {
+    function typedDataAllowed(address, address, EIP712DomainParams memory, string calldata, bytes calldata) public pure returns (bool) {
         return true;
     }
 }

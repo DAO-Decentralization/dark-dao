@@ -88,7 +88,7 @@ describe('BasicEncumberedWallet', () => {
 			console.log('Non-encumbered message signature:', sig);
 
 			const encMessage = createEthereumMessage('Encumbered message');
-			const sig2 = await policy.signOnBehalf(owner.address, 0, encMessage);
+			const sig2 = await policy.signOnBehalf(await wallet.getAddress(0), encMessage);
 			console.log('Encumbered message and signature:', '"' + encMessage + '"', sig2);
 		});
 		it('Should do basic voting encumbrance', async () => {
