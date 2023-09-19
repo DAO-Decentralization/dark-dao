@@ -17,10 +17,16 @@ struct SnapshotVote2 {
     bytes32 metadata;
 }
 
+interface ISnapshotEncumbrancePolicy {
+    function amVoteSigner(address account, bytes32 proposal, address sender, uint256 startTimestamp, uint256 endTimestamp) external view returns (bool);
+    function signOnBehalf(address account, bytes32 proposal, EIP712DomainParams memory domain, string calldata dataType, bytes calldata data) external view returns (bytes memory);
+}
+
 contract SnapshotEncumbrancePolicy is IEncumbrancePolicy, EIP712 {
     IEncumberedWallet public walletContract;
     mapping (address => address) private accountOwner;
-    mapping (address => uint256) private enrollmentTime;
+    mapping (address => uint256) private enrollmentTimestamp;
+    mapping (address => uint256) private encumbranceExpiration;
     mapping (address => mapping (bytes32 => address)) private allowedVoteSigner;
     
     constructor(IEncumberedWallet encumberedWallet) EIP712("SnapshotEncumbrancePolicy", "0.0.1") {
@@ -30,8 +36,29 @@ contract SnapshotEncumbrancePolicy is IEncumbrancePolicy, EIP712 {
     function notifyEncumbranceEnrollment(address _accountOwner, address account, uint256 expiration, bytes calldata) public {
         require(msg.sender == address(walletContract), "Not wallet contract");
         require(expiration >= block.timestamp, "Expiration is in the past");
-        enrollmentTime[account] = block.timestamp;
+        encumbranceExpiration[account] = expiration;
+        enrollmentTimestamp[account] = block.timestamp;
         accountOwner[account] = _accountOwner;
+    }
+    
+    // Try to prevent leaking to the caller of an allowed vote signer
+    function amVoteSigner(address account, bytes32 proposal, address sender, uint256 startTimestamp, uint256 endTimestamp) public view returns (bool) {
+        require(accountOwner[account] == sender, "Unauthorized");
+        require(enrollmentTimestamp[account] <= startTimestamp, "Enrollment too late");
+        require(encumbranceExpiration[account] >= endTimestamp, "Encumbrance period too short");
+        return allowedVoteSigner[account][proposal] == msg.sender;
+    }
+    
+    function signOnBehalf(address account, bytes32 proposal, EIP712DomainParams memory domain, string calldata dataType, bytes calldata data) public view returns (bytes memory) {
+        // Note that in the case of self-authorizations, wallet owners can just
+        // sign through the wallet contract directly
+        require(msg.sender == allowedVoteSigner[account][proposal], "Wrong vote signer");
+        require(keccak256(bytes(domain.name)) == keccak256(bytes("snapshot")), "Not a snapshot message");
+        require(keccak256(bytes(dataType[:4])) == keccak256(bytes("Vote")), "Not a snapshot Vote");
+        require(data.length == 256, "Incorrect vote data length");
+        SnapshotVote2 memory vote = abi.decode(data, (SnapshotVote2));
+        require(vote.proposal == proposal, "Wrong proposal");
+        return walletContract.signEncumberedTypedData(account, domain, dataType, data);
     }
     
     function selfVoteSigner(address account, bytes32 proposal) public {
@@ -64,6 +91,7 @@ contract SnapshotEncumbrancePolicy is IEncumbrancePolicy, EIP712 {
                 address voteSigner = allowedVoteSigner[addr][vote.proposal];
                 return voteSigner == accountOwner[addr];
             }
+            // Unrecognized vote type
             return false;
         }
         

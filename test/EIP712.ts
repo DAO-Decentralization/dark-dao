@@ -27,9 +27,9 @@ describe('EIP-712 Utils', () => {
 	const testDomain = {name: 'testdomain', version: '0.1.0', chainId: 1, verifyingContract: '0x0000000000000000000000000000000000000000'};
 
 	describe('EIP712', () => {
-	    it('Should calculate the correct domain params mask', () => {
-	        expect(getDomainParams(testDomain).usedParamsMask).to.equal(0b1111);
-	    });
+		it('Should calculate the correct domain params mask', () => {
+			expect(getDomainParams(testDomain).usedParamsMask).to.equal(0b1111);
+		});
 		it('Should calculate the correct domain hash', async () => {
 			const {owner, utils} = await deployEIP712Parameters();
 			const hashedDomain = ethers.utils._TypedDataEncoder.hashDomain(testDomain);
@@ -75,10 +75,10 @@ describe('EIP-712 Utils', () => {
 			})).to.equal('0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826');
 		});
 		it('Should create a correct EIP-712 type', async () => {
-		    const {owner, utils} = await deployEIP712Parameters();
-		    await expect(utils.getEIP712Type(0b00_0001)).to.eventually.equal('EIP712Domain(string name)');
-		    await expect(utils.getEIP712Type(0b00_0011)).to.eventually.equal('EIP712Domain(string name,string version)');
-		    await expect(utils.getEIP712Type(0b00_1111)).to.eventually.equal('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)');
+			const {owner, utils} = await deployEIP712Parameters();
+			await expect(utils.getEIP712Type(0b00_0001)).to.eventually.equal('EIP712Domain(string name)');
+			await expect(utils.getEIP712Type(0b00_0011)).to.eventually.equal('EIP712Domain(string name,string version)');
+			await expect(utils.getEIP712Type(0b00_1111)).to.eventually.equal('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)');
 		});
 	});
 });

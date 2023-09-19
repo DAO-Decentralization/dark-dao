@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.0 <0.9.0;
 
-// Uncomment this line to use console.log
-import "hardhat/console.sol";
 import "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
 
 import "./elliptic-curve/EllipticCurve.sol";
@@ -50,12 +48,8 @@ contract BasicEncumberedWallet is IEncumberedWallet {
     function createWallet(uint256 index) public {
         // Ensure that the wallet doesn't exist already
         require(publicKeys[msg.sender][index].length == 0, "Wallet exists");
-        console.log("Existing public key:");
-        //console.logBytes(publicKeys[msg.sender][index]);
         bytes memory empty;
         bytes memory seed = Sapphire.randomBytes(32, empty);
-        console.log("Seed:");
-        console.logBytes(seed);
         bytes memory publicKey;
         bytes memory privateKey;
         (publicKey, privateKey) = Sapphire.generateSigningKeyPair(

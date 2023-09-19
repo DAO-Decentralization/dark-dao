@@ -4,7 +4,7 @@ An implementation of key-encumbered wallet and encumbrance policy contracts that
 ### Current status
 We are still actively working on the implementation. There are a few things left to do:
 - [X] Encumbering access to signing voting-related messages while allowing transactions and other messages to be signed
-- [ ] Signing voting transactions from within a Dark DAO encumbrance policy contract (see the [example](contracts/ExampleEncumbrancePolicy.sol))
+- [X] Signing voting transactions from within a Dark DAO encumbrance policy contract (see the [example](contracts/ExampleEncumbrancePolicy.sol))
 - [ ] Dark DAO management (e.g. payments)
 
 ## Test locally
