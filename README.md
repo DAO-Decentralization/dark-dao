@@ -5,7 +5,7 @@ An implementation of key-encumbered wallet and encumbrance policy contracts that
 We are still actively working on the implementation. There are a few things left to do:
 - [X] Encumbering access to signing voting-related messages while allowing transactions and other messages to be signed
 - [X] Signing voting transactions from within a Dark DAO encumbrance policy contract (see the [example](contracts/ExampleEncumbrancePolicy.sol))
-- [ ] Dark DAO management (e.g. payments)
+- [X] Dark DAO management (e.g. payments)
 
 ## Test locally
 Run an Oasis Sapphire dev environment:
@@ -19,8 +19,6 @@ Run the test cases:
 ```shell
 npx hardhat test --network dev
 ```
-
-(NOTE: There's an issue with how long the tests take to run. Consider running test scripts and even some test cases individually until we find a fix to this.)
 
 ### Contributions
 Code formatting:

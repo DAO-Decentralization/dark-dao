@@ -11,6 +11,7 @@ contract SnapshotDarkDAO {
     // Total registered voting power
     uint256 private totalVotingPower;
     address private briber;
+    uint256 private outstandingBribeTotal;
     
     ISnapshotEncumbrancePolicy public snapshotEncPolicy;
     // Timestamp after which no more entrants are accepted
@@ -32,6 +33,10 @@ contract SnapshotDarkDAO {
         totalVotingPower = 0;
     }
     
+    receive() external payable {
+        // Accept extra bribe money
+    }
+    
     function getLeaf(address account, uint256 votingPower, uint256 bribe) public pure returns (bytes32) {
         return keccak256(bytes.concat(keccak256(abi.encode(account, votingPower, bribe))));
     }
@@ -41,12 +46,29 @@ contract SnapshotDarkDAO {
         require(snapshotEncPolicy.amVoteSigner(account, proposalHash, msg.sender, proposalStart, proposalEnd), "Dark DAO must be the vote signer");
         require(registeredBribes[account] == 0, "Already entered");
         require(MerkleProof.verify(proof, bribeMerkleRoot, getLeaf(account, votingPower, bribe)), "Invalid Merkle proof");
+        require(address(this).balance - outstandingBribeTotal >= bribe, "Insufficient bribe funds remaining");
         registeredBribes[account] = bribe;
+        outstandingBribeTotal += bribe;
         totalVotingPower += votingPower;
     }
     
     function signVote(address account, EIP712DomainParams memory domain, string calldata dataType, bytes calldata data) public view returns (bytes memory) {
         require(msg.sender == briber, "Only the briber signs votes");
         return snapshotEncPolicy.signOnBehalf(account, proposalHash, domain, dataType, data);
+    }
+    
+    function claimBribe(address account) public {
+        require(bribesPaid[account] == 0, "Bribe already paid");
+        require(registeredBribes[account] > 0, "Bribe not registered for this account");
+        // Avoid re-entry
+        uint256 bribe = registeredBribes[account];
+        bribesPaid[account] = bribe;
+        outstandingBribeTotal -= bribe;
+        payable(account).transfer(bribe);
+    }
+    
+    function withdrawUnusedFunds() public {
+        require(msg.sender == briber);
+        payable(msg.sender).transfer(address(this).balance - outstandingBribeTotal);
     }
 }
