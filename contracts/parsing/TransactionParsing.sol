@@ -20,12 +20,13 @@ contract TransactionReader {
     using RLPReader for RLPReader.RLPItem;
     using RLPReader for RLPReader.Iterator;
     using RLPReader for bytes;
+
     function parseTransaction(bytes calldata txBytes) public pure returns (Type2TxMessage memory) {
         require(txBytes[0] == 0x02, "Only type 2 transactions supported");
         bytes memory txRlpBytes = txBytes[1:];
         RLPReader.RLPItem[] memory ls = txRlpBytes.toRlpItem().toList();
         require(ls.length == 9, "Wrong RLP list length for type 2 transactions");
-        
+
         Type2TxMessage memory _tx;
         _tx.chainId = ls[0].toUint();
         _tx.nonce = ls[1].toUint();
@@ -37,7 +38,7 @@ contract TransactionReader {
         _tx.payload = ls[7].toBytes();
         // Ignore the access list
         ls[8].toList();
-        
+
         return _tx;
     }
 }

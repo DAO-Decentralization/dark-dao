@@ -40,7 +40,7 @@ library EIP712Utils {
         result = string.concat(result, ")");
         return result;
     }
-    
+
     /**
      * @dev Returns the domain separator for EIP-712 typehash
      * @param params EIP-712 domain parameters
@@ -65,12 +65,16 @@ library EIP712Utils {
         }
         return keccak256(domainSeparator);
     }
-    
+
     function hashStruct(string calldata typeSig, bytes calldata encodedData) public pure returns (bytes32) {
         return keccak256(bytes.concat(keccak256(bytes(typeSig)), encodedData));
     }
-    
-    function getTypedDataHash(EIP712DomainParams memory params, string calldata typeSig, bytes calldata encodedData) public pure returns (bytes32) {
+
+    function getTypedDataHash(
+        EIP712DomainParams memory params,
+        string calldata typeSig,
+        bytes calldata encodedData
+    ) public pure returns (bytes32) {
         return keccak256(bytes.concat(hex"19_01", buildDomainSeparator(params), hashStruct(typeSig, encodedData)));
     }
 }

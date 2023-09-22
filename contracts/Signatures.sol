@@ -11,7 +11,7 @@ contract Signatures1 {
     bytes private publicKey;
     bytes private privateKey;
     address private owner;
-    
+
     event Withdrawal(uint amount, uint when);
 
     constructor() {
@@ -22,7 +22,8 @@ contract Signatures1 {
         console.logBytes(seed);
         (publicKey, privateKey) = Sapphire.generateSigningKeyPair(
             Sapphire.SigningAlg.Secp256k1PrehashedKeccak256,
-            seed);
+            seed
+        );
     }
 
     function showKeys() public view returns (bytes memory, bytes memory) {
@@ -33,7 +34,7 @@ contract Signatures1 {
         console.logBytes(privateKey);
         return (publicKey, privateKey);
     }
-    
+
     /**
      @notice Sign an arbitrary message. NOTE: This message might be an Ethereum transaction or typed data, or anything.
      @param message The message to be signed.
@@ -46,7 +47,8 @@ contract Signatures1 {
             Sapphire.SigningAlg.Secp256k1PrehashedKeccak256,
             privateKey,
             bytes.concat(messageHash),
-            "");
+            ""
+        );
         return signature;
     }
 }

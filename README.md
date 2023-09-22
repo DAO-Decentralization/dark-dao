@@ -21,9 +21,14 @@ npx hardhat test --network dev
 ```
 
 ### Contributions
-Code formatting:
+TypeScript code formatting:
 ```
 npx xo --fix
+```
+
+Solidity code formatting:
+```
+npm run format-solidity
 ```
 
 ### Acknowledgements
