@@ -161,16 +161,22 @@ describe('Snapshot Dark DAO', () => {
 			const ownerProof = bribeMerkleTree.getProof(ownerLeaf);
 			await policy.setVoteSigner(ownerAddress, getSnapshotVoteTypedData(ownerAddress).message.proposal, darkDao.address)
 				.then(async x => x.wait());
-			await expect(darkDao.enterDarkDAO(ownerAddress, ownerLeaf[1], ownerLeaf[2], ownerProof)).to.not.be.reverted;
 
-			const previousBalance = await ethers.provider.getBalance(ownerAddress);
-			await expect(darkDao.claimBribe(ownerAddress)).to.not.be.reverted;
-			const afterBalance = await ethers.provider.getBalance(ownerAddress);
-			expect(afterBalance.sub(previousBalance)).to.equal(ownerLeaf[2]);
+			const enterDarkDaoTx = await darkDao.enterDarkDAO(ownerAddress, ownerLeaf[1], ownerLeaf[2], ownerProof).then(async tx => tx.wait());
+			expect(enterDarkDaoTx.status).to.equal(1);
+			console.log('enterDarkDAO gas cost:', enterDarkDaoTx.cumulativeGasUsed.toString());
+
+			const previousBalance = await ethers.provider.getBalance(owner.address);
+			const claimBribeTx = await darkDao.claimBribe(ownerAddress).then(async tx => tx.wait());
+			expect(claimBribeTx.status).to.equal(1);
+			console.log('claimBribe gas cost:', claimBribeTx.cumulativeGasUsed.toString());
+			const afterBalance = await ethers.provider.getBalance(owner.address);
+			// Allow for transaction costs in our assertion
+			expect(afterBalance.sub(previousBalance).gt(ownerLeaf[2].sub(ethers.utils.parseEther('0.03')))).to.be.true;
 
 			// Fail to pay bribe more than once
 			await expect(darkDao.claimBribe(ownerAddress)).to.be.reverted;
-			
+
 			// Withdraw excess funds back to briber
 			const previousBriberBalance = await ethers.provider.getBalance(owner.address);
 			await darkDao.withdrawUnusedFunds();

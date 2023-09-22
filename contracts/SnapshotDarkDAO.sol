@@ -7,6 +7,7 @@ import {EIP712DomainParams} from "./EIP712Utils.sol";
 
 contract SnapshotDarkDAO {
     mapping (address => uint256) private registeredBribes;
+    mapping (address => address) private accountOwners;
     mapping (address => uint256) private bribesPaid;
     // Total registered voting power
     uint256 private totalVotingPower;
@@ -48,6 +49,7 @@ contract SnapshotDarkDAO {
         require(MerkleProof.verify(proof, bribeMerkleRoot, getLeaf(account, votingPower, bribe)), "Invalid Merkle proof");
         require(address(this).balance - outstandingBribeTotal >= bribe, "Insufficient bribe funds remaining");
         registeredBribes[account] = bribe;
+        accountOwners[account] = msg.sender;
         outstandingBribeTotal += bribe;
         totalVotingPower += votingPower;
     }
@@ -58,13 +60,14 @@ contract SnapshotDarkDAO {
     }
     
     function claimBribe(address account) public {
+        require(msg.sender != address(0) && msg.sender == accountOwners[account], "Only account owner");
         require(bribesPaid[account] == 0, "Bribe already paid");
         require(registeredBribes[account] > 0, "Bribe not registered for this account");
         // Avoid re-entry
         uint256 bribe = registeredBribes[account];
         bribesPaid[account] = bribe;
         outstandingBribeTotal -= bribe;
-        payable(account).transfer(bribe);
+        payable(msg.sender).transfer(bribe);
     }
     
     function withdrawUnusedFunds() public {
