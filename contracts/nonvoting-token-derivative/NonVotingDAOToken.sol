@@ -3,11 +3,42 @@ pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 contract NonVotingDAOToken is ERC20, ERC20Permit {
     address public underlyingToken;
+    address public darkDaoSigner;
+    mapping(bytes32 => uint256) mints;
+    mapping(bytes32 => uint256) withdrawalAmounts;
 
-    constructor(address _underlyingToken) ERC20("Non-Voting DAO Token", "NVT") ERC20Permit("Non-Voting DAO Token") {
+    event Withdrawal(address indexed sender, uint256 amount, uint256 indexed nonce);
+
+    constructor(
+        address _underlyingToken,
+        address _darkDaoSigner
+    ) ERC20("Non-Voting DAO Token", "NVT") ERC20Permit("Non-Voting DAO Token") {
         underlyingToken = _underlyingToken;
+        darkDaoSigner = _darkDaoSigner;
+    }
+
+    function finalizeDeposit(address recipientAddress, uint256 amount, uint256 nonce, bytes memory signature) public {
+        // Verify signature
+        bytes32 hash = keccak256(abi.encode(recipientAddress, amount, nonce));
+        (address recovered, ECDSA.RecoverError error) = ECDSA.tryRecover(hash, signature);
+        require(error == ECDSA.RecoverError.NoError && recovered == darkDaoSigner, "Invalid signature or wrong signer");
+
+        require(mints[hash] == 0, "Tokens already minted");
+        mints[hash] = 1;
+
+        _mint(recipientAddress, amount);
+    }
+
+    function beginWithdrawal(uint256 amount, uint256 nonce) public {
+        _burn(msg.sender, amount);
+        bytes32 hash = keccak256(abi.encode(msg.sender, amount, nonce));
+        require(withdrawalAmounts[hash] == 0, "Use a different nonce");
+        withdrawalAmounts[hash] = amount;
+
+        emit Withdrawal(msg.sender, amount, nonce);
     }
 }
