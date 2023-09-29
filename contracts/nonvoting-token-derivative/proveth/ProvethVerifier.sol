@@ -7,7 +7,9 @@ contract ProvethVerifier {
     using RLPReader for RLPReader.RLPItem;
     using RLPReader for bytes;
 
-    uint256 constant TX_ROOT_HASH_INDEX = 4;
+    uint256 constant BLOCK_HEADER_STATE_ROOT_INDEX = 3;
+    uint256 constant BLOCK_HEADER_TX_ROOT_INDEX = 4;
+    uint256 constant ACCOUNT_STORAGE_ROOT_INDEX = 2;
 
     struct UnsignedTransaction {
         uint256 nonce;
@@ -177,7 +179,7 @@ contract ProvethVerifier {
         proof = Proof(
             proofFields[0].toUint(),
             proofFields[1].toRlpBytes(),
-            bytes32(proofFields[1].toList()[TX_ROOT_HASH_INDEX].toUint()),
+            bytes32(proofFields[1].toList()[BLOCK_HEADER_TX_ROOT_INDEX].toUint()),
             rlpTxIndex,
             proofFields[2].toUint(),
             decodeNibbles(rlpTxIndex, 0),
@@ -247,6 +249,44 @@ contract ProvethVerifier {
         } else {
             return (TX_PROOF_RESULT_PRESENT, proof.txIndex, decodeSignedTx(rlpTx));
         }
+    }
+
+    struct StorageProof {
+        bytes rlpBlockHeader;
+        address addr;
+        uint256 storageSlot;
+        bytes accountProofStack;
+        bytes storageProofStack;
+    }
+
+    function validateStorageProof(bytes32 blockHash, StorageProof calldata storageProof) public pure returns (uint256) {
+        require(keccak256(storageProof.rlpBlockHeader) == blockHash, "Block header does not match given block hash");
+        RLPReader.RLPItem[] memory blockHeader = storageProof.rlpBlockHeader.toRlpItem().toList();
+        bytes32 stateRoot = bytes32(blockHeader[BLOCK_HEADER_STATE_ROOT_INDEX].toUint());
+
+        // The key in the trie is the keccak256 of the address
+        // We must convert the bytes of the keccak256 to nibbles for validateMPTProof
+        bytes memory accountKey = decodeNibbles(bytes.concat(keccak256(bytes.concat(bytes20(storageProof.addr)))), 0);
+        bytes memory accountRlp = validateMPTProof(
+            stateRoot,
+            accountKey,
+            RLPReader.toList(RLPReader.toRlpItem(storageProof.accountProofStack))
+        );
+        RLPReader.RLPItem[] memory account = accountRlp.toRlpItem().toList();
+        bytes32 storageRoot = bytes32(account[ACCOUNT_STORAGE_ROOT_INDEX].toUint());
+
+        // Prove storage proof
+        bytes memory storageKey = decodeNibbles(
+            bytes.concat(keccak256(bytes.concat(bytes32(storageProof.storageSlot)))),
+            0
+        );
+        bytes memory storageValue = validateMPTProof(
+            storageRoot,
+            storageKey,
+            RLPReader.toList(RLPReader.toRlpItem(storageProof.storageProofStack))
+        );
+        uint256 val = RLPReader.toRlpItem(storageValue).toUint();
+        return val;
     }
 
     /// @dev Computes the hash of the Merkle-Patricia-Trie hash of the input.
