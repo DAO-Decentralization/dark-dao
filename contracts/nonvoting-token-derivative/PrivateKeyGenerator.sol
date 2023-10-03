@@ -22,7 +22,7 @@ contract PrivateKeyGenerator {
         publicAddress = ethAddressFromPublicKey(decompressed);
     }
 
-    function ethAddressFromPublicKey(bytes memory q) private pure returns (address) {
+    function ethAddressFromPublicKey(bytes memory q) internal pure returns (address) {
         require(q.length == 64, "Incorrect bytes length");
         bytes32 publicKeyKeccak = keccak256(q);
         return address(uint160(uint256(publicKeyKeccak)));

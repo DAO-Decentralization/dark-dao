@@ -8,7 +8,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 contract NonVotingDAOToken is ERC20, ERC20Permit {
     address public underlyingToken;
     address public darkDaoSigner;
-    mapping(bytes32 => uint256) mints;
+    mapping(uint256 => uint256) mints;
     mapping(bytes32 => uint256) withdrawalAmounts;
 
     event Withdrawal(address indexed sender, uint256 amount, uint256 indexed nonce);
@@ -21,21 +21,26 @@ contract NonVotingDAOToken is ERC20, ERC20Permit {
         darkDaoSigner = _darkDaoSigner;
     }
 
-    function finalizeDeposit(address recipientAddress, uint256 amount, uint256 nonce, bytes memory signature) public {
+    function finalizeDeposit(
+        address recipientAddress,
+        uint256 amount,
+        uint256 depositId,
+        bytes memory signature
+    ) public {
         // Verify signature
-        bytes32 hash = keccak256(abi.encode(recipientAddress, amount, nonce));
+        bytes32 hash = keccak256(abi.encode("deposit", recipientAddress, amount, depositId));
         (address recovered, ECDSA.RecoverError error) = ECDSA.tryRecover(hash, signature);
         require(error == ECDSA.RecoverError.NoError && recovered == darkDaoSigner, "Invalid signature or wrong signer");
 
-        require(mints[hash] == 0, "Tokens already minted");
-        mints[hash] = 1;
+        require(mints[depositId] == 0, "Tokens already minted");
+        mints[depositId] = 1;
 
         _mint(recipientAddress, amount);
     }
 
     function beginWithdrawal(uint256 amount, uint256 nonce) public {
         _burn(msg.sender, amount);
-        bytes32 hash = keccak256(abi.encode(msg.sender, amount, nonce));
+        bytes32 hash = keccak256(abi.encode("withdrawal", msg.sender, amount, nonce));
         require(withdrawalAmounts[hash] == 0, "Use a different nonce");
         withdrawalAmounts[hash] = amount;
 

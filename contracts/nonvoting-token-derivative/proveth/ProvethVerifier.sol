@@ -3,6 +3,14 @@ pragma solidity ^0.8.18;
 
 import "solidity-rlp/contracts/RLPReader.sol";
 
+struct StorageProof {
+    bytes rlpBlockHeader;
+    address addr;
+    uint256 storageSlot;
+    bytes accountProofStack;
+    bytes storageProofStack;
+}
+
 contract ProvethVerifier {
     using RLPReader for RLPReader.RLPItem;
     using RLPReader for bytes;
@@ -251,16 +259,7 @@ contract ProvethVerifier {
         }
     }
 
-    struct StorageProof {
-        bytes rlpBlockHeader;
-        address addr;
-        uint256 storageSlot;
-        bytes accountProofStack;
-        bytes storageProofStack;
-    }
-
-    function validateStorageProof(bytes32 blockHash, StorageProof calldata storageProof) public pure returns (uint256) {
-        require(keccak256(storageProof.rlpBlockHeader) == blockHash, "Block header does not match given block hash");
+    function validateStorageProof(StorageProof calldata storageProof) public pure returns (uint256) {
         RLPReader.RLPItem[] memory blockHeader = storageProof.rlpBlockHeader.toRlpItem().toList();
         bytes32 stateRoot = bytes32(blockHeader[BLOCK_HEADER_STATE_ROOT_INDEX].toUint());
 

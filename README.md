@@ -8,12 +8,26 @@ We are still actively working on the implementation. There are a few things left
 - [X] Dark DAO management (e.g. payments)
 
 ## Test locally
+Requirements:
+* Docker
+* NodeJS
+* geth
+
 Run an Oasis Sapphire dev environment:
 ```
 docker run -it -p8545:8545 -p8546:8546 ghcr.io/oasisprotocol/sapphire-dev -to "0x72A6CF1837105827077250171974056B40377488"
 ```
 
 Note that these accounts are ephemeral and will be lost when you restart. Also, the TEE environment in the development environment is simulated.
+
+The nonvoting token derivative test cases require a local development network using `geth`:
+```shell
+cd geth-devnet
+# Create a network using the genesis.json file
+./init_geth_devnet.sh
+# Run the dev network
+./run_geth_devnet.sh
+```
 
 Run the test cases:
 ```shell

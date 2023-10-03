@@ -9,7 +9,7 @@ export function createEthereumMessage(message: string): string {
 }
 
 // Convert a Sapphire DER-encoded signature to an Ethereum signature
-export function derToEthSignature(signature: string, message: string, expectedAddress: string, isMessage = false): string | undefined {
+export function derToEthSignature(signature: string, messageOrDigest: string, expectedAddress: string, isMessage = false): string | undefined {
 	// DER-encoded sequence with correct length
 	let pos = 0;
 	if (ethers.utils.hexDataSlice(signature, pos, pos + 1) !== '0x30') {
@@ -56,12 +56,12 @@ export function derToEthSignature(signature: string, message: string, expectedAd
 		const potentialSignature = ethers.utils.hexConcat([...pieces, ethers.utils.hexlify(0x1B + i)]);
 		try {
 			if (isMessage) {
-				if (ethers.utils.verifyMessage(message, potentialSignature) === expectedAddress) {
+				if (ethers.utils.verifyMessage(messageOrDigest, potentialSignature) === expectedAddress) {
 					ethSig = potentialSignature;
 				}
 			} else {
-				console.log('Trying to recover digest ' + message + ' with signature ' + potentialSignature);
-				const publicKey = ethers.utils.recoverPublicKey(message, potentialSignature);
+				console.log('Trying to recover digest ' + messageOrDigest + ' with signature ' + potentialSignature);
+				const publicKey = ethers.utils.recoverPublicKey(messageOrDigest, potentialSignature);
 				const address = ethers.utils.computeAddress(publicKey);
 				if (address === expectedAddress) {
 					ethSig = potentialSignature;

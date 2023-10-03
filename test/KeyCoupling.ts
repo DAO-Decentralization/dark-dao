@@ -12,6 +12,8 @@ describe('KeyCoupling', () => {
 		const KeyCoupling = await ethers.getContractFactory('KeyCoupling');
 		const keyCoupling = await KeyCoupling.deploy();
 		const publicKey = await keyCoupling.getPublicKey();
+		console.log('Public key: ' + publicKey);
+		console.log('Decompressed public key: ' + await keyCoupling.decompressPublicKey(publicKey));
 		const publicAddress = await keyCoupling.getPublicAddress();
 		console.log('Public address: ' + publicAddress);
 		return {owner, keyCoupling, publicKey};
