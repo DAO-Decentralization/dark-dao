@@ -123,7 +123,7 @@ describe('Nonvoting Token', () => {
 				storageProofStack: ethers.utils.RLP.encode(proof.storageProof[0].proof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
 			};
 			await dd.registerDeposit(depositData.wrappedAddressInfo, proofBlock.number, storageProof).then(async t => t.wait());
-			const depositReceipt = await dd.deposits(0);
+			const depositReceipt = await dd.getDeposit(0);
 			console.log('Deposit receipt:', depositReceipt);
 
 			// Mint the nvDAO tokens

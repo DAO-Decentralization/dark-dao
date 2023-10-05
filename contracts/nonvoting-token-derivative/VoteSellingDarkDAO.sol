@@ -8,6 +8,7 @@ import "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
 import "./PrivateKeyGenerator.sol";
 import "./IBlockHeaderOracle.sol";
 import {StorageProof, ProvethVerifier} from "./proveth/ProvethVerifier.sol";
+import {VoteAuction} from "./VoteAuction.sol";
 
 struct DepositReceipt {
     address recipient;
@@ -16,7 +17,7 @@ struct DepositReceipt {
     bytes signature;
 }
 
-contract VoteSellingDarkDAO is PrivateKeyGenerator {
+contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
     IBlockHeaderOracle private ethBlockHeaderOracle;
     ProvethVerifier public stateVerifier;
     bytes private signingKey;
@@ -38,7 +39,9 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator {
     mapping(address => bool) deposited;
     mapping(address => uint256) depositAmount;
     mapping(address => bytes) accountKeys;
-    DepositReceipt[] public deposits;
+    uint256 private totalDeposits = 0;
+    uint256[] private depositBlockNumbers;
+    DepositReceipt[] private deposits;
 
     constructor(
         IBlockHeaderOracle _ethBlockHeaderOracle,
@@ -46,8 +49,10 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator {
         address _ethNvToken,
         address _ethDaoToken,
         uint256 _daoTokenBalanceSlot,
-        uint256 _minDeposit
-    ) {
+        uint256 _minDeposit,
+        uint256 minimumBid,
+        uint256 auctionDuration
+    ) VoteAuction(minimumBid, auctionDuration) {
         ethBlockHeaderOracle = _ethBlockHeaderOracle;
         stateVerifier = _stateVerifier;
         ethNvToken = _ethNvToken;
@@ -113,6 +118,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator {
             bytes.concat(messageHash),
             ""
         );
+        totalDeposits += depositedAmount;
         deposits.push(
             DepositReceipt({
                 recipient: nvTokenRecipient,
@@ -121,5 +127,18 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator {
                 signature: signature
             })
         );
+        depositBlockNumbers.push(block.number);
+    }
+
+    function getDeposit(uint256 index) public view returns (DepositReceipt memory) {
+        require(
+            block.number > depositBlockNumbers[index],
+            "Wait until the next block for the deposit receipt to be accepted"
+        );
+        return deposits[index];
+    }
+
+    function signVote(bytes32 proposalHash, uint256 option, uint256 addressIndex) public view returns (bytes memory) {
+        require(getAuctionWinner(proposalHash) == msg.sender, "Only the auction winner can sign vote messages");
     }
 }
