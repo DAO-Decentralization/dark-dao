@@ -139,7 +139,7 @@ describe('Snapshot Dark DAO', () => {
 				.then(async x => x.wait());
 			// Succeed now that the Dark DAO is the vote signer
 			await expect(darkDao.enterDarkDAO(ownerAddress, ownerLeaf[1], ownerLeaf[2], ownerProof)).to.not.be.reverted;
-			// Sign a voting mesage (since owner == briber)
+			// Sign a voting message (since owner == briber)
 			const typedDataEnc = ethers.utils._TypedDataEncoder.from(typedData.types);
 			const typeString = typedDataEnc.encodeType('Vote');
 			console.log('Type string: ' + typeString);
@@ -171,7 +171,7 @@ describe('Snapshot Dark DAO', () => {
 			expect(claimBribeTx.status).to.equal(1);
 			console.log('claimBribe gas cost:', claimBribeTx.cumulativeGasUsed.toString());
 			const afterBalance = await ethers.provider.getBalance(owner.address);
-			// Allow for transaction costs in our assertion
+			// Check for payment, allowing for transaction costs
 			expect(afterBalance.sub(previousBalance).gt(ownerLeaf[2].sub(ethers.utils.parseEther('0.03')))).to.be.true;
 
 			// Fail to pay bribe more than once

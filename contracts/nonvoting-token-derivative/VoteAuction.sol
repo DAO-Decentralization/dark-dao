@@ -9,7 +9,7 @@ struct Bid {
 contract VoteAuction {
     mapping(bytes32 => uint256) private auctionEnds;
     mapping(bytes32 => Bid) private currentBid;
-    mapping(address => uint256) private refunds;
+    mapping(address => uint256) private deposited;
     uint256 public minimumBid;
     uint256 public auctionDuration;
 
@@ -24,24 +24,27 @@ contract VoteAuction {
     function createAuction(bytes32 hash) public payable {
         require(auctionEnds[hash] == 0, "Auction already initialized");
         auctionEnds[hash] = block.timestamp + auctionDuration;
-        if (msg.value > 0) {
-            bid(hash);
-        }
         emit AuctionCreated(hash, auctionEnds[hash]);
+        if (msg.value > 0) {
+            bid(hash, msg.value);
+        }
     }
 
     function getMaxBid(bytes32 hash) public view returns (uint256) {
         return currentBid[hash].bidValue;
     }
 
-    function bid(bytes32 hash) public payable {
+    function bid(bytes32 hash, uint256 bidValue) public payable {
+        deposited[msg.sender] += msg.value;
         require(block.timestamp < auctionEnds[hash], "Auction has ended");
-        require(msg.value >= minimumBid, "You must bid at least the minimum");
-        require(msg.value > currentBid[hash].bidValue, "Another bid is greater than this one");
+        require(bidValue >= minimumBid, "You must bid at least the minimum");
+        require(bidValue > currentBid[hash].bidValue, "Bid must be higher than the current highest bid");
         if (currentBid[hash].bidValue > 0 && currentBid[hash].bidder != address(0)) {
             // Add to refund
-            refunds[currentBid[hash].bidder] += currentBid[hash].bidValue;
+            deposited[currentBid[hash].bidder] += currentBid[hash].bidValue;
         }
+        require(bidValue <= deposited[msg.sender], "Bid value greater than deposited amount");
+        deposited[msg.sender] -= bidValue;
         currentBid[hash] = Bid({bidValue: msg.value, bidder: msg.sender});
         emit BidSubmitted(hash, msg.value);
     }
@@ -53,8 +56,8 @@ contract VoteAuction {
     }
 
     function withdrawExcess() public {
-        uint256 refund = refunds[msg.sender];
-        refunds[msg.sender] = 0;
+        uint256 refund = deposited[msg.sender];
+        deposited[msg.sender] = 0;
         payable(msg.sender).transfer(refund);
     }
 }

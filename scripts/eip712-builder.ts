@@ -1,4 +1,6 @@
+import {ethers} from 'ethers';
 import {type BigNumberish, type HexLike} from 'ethers';
+import {type TypedDataDomain, type TypedDataField} from '@ethersproject/abstract-signer';
 
 type EIP712Domain = {
 	name?: string;
@@ -9,6 +11,13 @@ type EIP712Domain = {
 };
 
 type EIP712DomainParameters = EIP712Domain & {usedParamsMask: number};
+
+export type PopulatedTypedData = {
+	domain: TypedDataDomain;
+	types: Record<string, TypedDataField[]>;
+	primaryType: string;
+	message: Record<string, any>;
+};
 
 export function getDomainParams(domain: EIP712Domain): EIP712DomainParameters {
 	const domainParameters: EIP712DomainParameters = {...domain, usedParamsMask: 0};
@@ -23,4 +32,16 @@ export function getDomainParams(domain: EIP712Domain): EIP712DomainParameters {
 	}
 
 	return domainParameters;
+}
+
+export function getTypedDataParams(typedData: PopulatedTypedData): {typeString: string; encodedData: string; domainParams: EIP712DomainParameters} {
+	const typedDataEnc = ethers.utils._TypedDataEncoder.from(typedData.types);
+	const typeString = typedDataEnc.encodeType(typedData.primaryType);
+	const encodedData = ethers.utils.hexDataSlice(typedDataEnc.encodeData(typedData.primaryType, typedData.message), 32);
+	const domainParameters = getDomainParams(typedData.domain);
+	return {
+		typeString,
+		encodedData,
+		domainParams: domainParameters,
+	};
 }

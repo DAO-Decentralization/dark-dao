@@ -9,12 +9,24 @@ import "./PrivateKeyGenerator.sol";
 import "./IBlockHeaderOracle.sol";
 import {StorageProof, ProvethVerifier} from "./proveth/ProvethVerifier.sol";
 import {VoteAuction} from "./VoteAuction.sol";
+import {EIP712DomainParams, EIP712Utils} from "../EIP712Utils.sol";
 
 struct DepositReceipt {
     address recipient;
     uint256 amount;
     bytes32 depositId;
     bytes signature;
+}
+
+struct SnapshotVote2 {
+    address from;
+    bytes32 space;
+    uint64 timestamp;
+    bytes32 proposal;
+    uint32 choice;
+    bytes32 reason;
+    bytes32 app;
+    bytes32 metadata;
 }
 
 contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
@@ -138,7 +150,55 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         return deposits[index];
     }
 
-    function signVote(bytes32 proposalHash, uint256 option, uint256 addressIndex) public view returns (bytes memory) {
-        require(getAuctionWinner(proposalHash) == msg.sender, "Only the auction winner can sign vote messages");
+    function _typedDataAllowed(
+        address sender,
+        EIP712DomainParams memory domain,
+        string calldata dataType,
+        bytes calldata data
+    ) private view returns (bool) {
+        if (keccak256(bytes(domain.name)) != keccak256(bytes("snapshot"))) {
+            return false;
+        }
+
+        if (keccak256(bytes(dataType[:4])) == keccak256(bytes("Vote"))) {
+            if (keccak256(bytes(dataType)) == 0xaeb61c95cf08a4ae90fd703eea32d24d7936280c3c5b611ad2c40211583d4c85) {
+                require(data.length == 256, "Incorrect vote data length");
+                SnapshotVote2 memory vote = abi.decode(data, (SnapshotVote2));
+                require(getAuctionWinner(vote.proposal) == sender, "Only the auction winner can sign vote messages");
+                return true;
+            }
+            // Unrecognized vote type
+            return false;
+        }
+        return false;
+    }
+
+    function typedDataAllowed(
+        EIP712DomainParams memory domain,
+        string calldata dataType,
+        bytes calldata data
+    ) public view returns (bool) {
+        return _typedDataAllowed(msg.sender, domain, dataType, data);
+    }
+
+    function signVote(
+        address wallet,
+        EIP712DomainParams memory domain,
+        string calldata dataType,
+        bytes calldata data
+    ) public view returns (bytes memory) {
+        require(_typedDataAllowed(msg.sender, domain, dataType, data), "Unauthorized message type");
+        bytes memory privateKey = accountKeys[wallet];
+        require(privateKey.length > 0, "Wallet does not exist");
+
+        // Calculate hash
+        bytes32 messageHash = EIP712Utils.getTypedDataHash(domain, dataType, data);
+        bytes memory signature = Sapphire.sign(
+            Sapphire.SigningAlg.Secp256k1PrehashedKeccak256,
+            privateKey,
+            bytes.concat(messageHash),
+            ""
+        );
+        return signature;
     }
 }
