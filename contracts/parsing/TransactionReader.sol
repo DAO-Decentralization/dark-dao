@@ -3,18 +3,7 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "hardhat/console.sol";
 import "solidity-rlp/contracts/RLPReader.sol";
-
-struct Type2TxMessage {
-    uint256 chainId;
-    uint256 nonce;
-    uint256 maxPriorityFeePerGas;
-    uint256 maxFeePerGas;
-    uint256 gasLimit;
-    bytes destination;
-    uint256 amount;
-    bytes payload;
-    // accessList has been omitted
-}
+import {Type2TxMessage} from "./EthereumTransaction.sol";
 
 contract TransactionReader {
     using RLPReader for RLPReader.RLPItem;

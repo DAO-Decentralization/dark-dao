@@ -42,18 +42,24 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
     address public ethNvToken;
     // Ethereum address of the underlying DAO token
     address public ethDaoToken;
-    // Storage slot of the balance mapping in the DAO token
+    // Storage slot of the balance mapping in the underlying DAO token contract
     uint256 daoTokenBalanceSlot;
     // Minimum deposit amount
     uint256 minDeposit;
+    // Storage slot of the withdrawalAmounts mapping in the nonvoting token contract
+    uint256 nvTokenWithdrawalsSlot;
 
-    address[] private addresses;
+    address[] private accounts;
     mapping(address => bool) deposited;
     mapping(address => uint256) depositAmount;
     mapping(address => bytes) accountKeys;
+    mapping(address => uint256) accountNonces;
     uint256 private totalDeposits = 0;
     uint256[] private depositBlockNumbers;
     DepositReceipt[] private deposits;
+
+    mapping(bytes32 => uint256) withdrawalState;
+    mapping(address => uint256) withdrawalsOwed;
 
     constructor(
         IBlockHeaderOracle _ethBlockHeaderOracle,
@@ -61,6 +67,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         address _ethNvToken,
         address _ethDaoToken,
         uint256 _daoTokenBalanceSlot,
+        uint256 _nvTokenWithdrawalsSlot,
         uint256 _minDeposit,
         uint256 minimumBid,
         uint256 auctionDuration
@@ -70,6 +77,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         ethNvToken = _ethNvToken;
         ethDaoToken = _ethDaoToken;
         daoTokenBalanceSlot = _daoTokenBalanceSlot;
+        nvTokenWithdrawalsSlot = _nvTokenWithdrawalsSlot;
         minDeposit = _minDeposit;
         (signingKey, darkDaoSignerAddress) = generatePrivateKey("signer");
         macKey = bytes32(Sapphire.randomBytes(32, "macKey"));
@@ -118,7 +126,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         deposited[depositAddress] = true;
         depositAmount[depositAddress] = depositedAmount;
         accountKeys[depositAddress] = accountKey;
-        addresses.push(depositAddress);
+        accounts.push(depositAddress);
 
         bytes32 depositId = keccak256(
             bytes.concat(bytes("deposit"), bytes20(nvTokenRecipient), bytes20(depositAddress), depositIdRandomness)
@@ -143,6 +151,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
     }
 
     function getDeposit(uint256 index) public view returns (DepositReceipt memory) {
+        // Assumes execution and simulations only can happen on top of the latest Sapphire block
         require(
             block.number > depositBlockNumbers[index],
             "Wait until the next block for the deposit receipt to be accepted"
@@ -201,4 +210,45 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         );
         return signature;
     }
+
+    function registerWithdrawal(
+        address burnSender,
+        uint256 amount,
+        bytes32 nonceHash,
+        bytes32 witness,
+        address withdrawalRecipient,
+        uint256 proofBlockNumber,
+        StorageProof memory storageProof
+    ) public {
+        require(
+            msg.sender == burnSender || keccak256(bytes.concat(witness)) == nonceHash,
+            "Correct account or witness required"
+        );
+
+        // Calculate withdrawalAmounts storage slot
+        bytes32 storageKey = keccak256(abi.encode("withdrawal", burnSender, amount, nonceHash));
+        uint256 storageSlot = uint256(keccak256(abi.encode(storageKey, nvTokenWithdrawalsSlot)));
+        require(storageProof.addr == ethNvToken, "Proof must be for the nonvoting DAO derivative token");
+        require(
+            storageProof.storageSlot == storageSlot,
+            "Proof must be for withdrawalAmounts(depositAddress) storage slot"
+        );
+        require(
+            keccak256(storageProof.rlpBlockHeader) == ethBlockHeaderOracle.getBlockHeaderHash(proofBlockNumber),
+            "Block hash incorrect or not found in oracle"
+        );
+
+        require(withdrawalState[storageKey] == 0, "Withdrawal already registered");
+        withdrawalState[storageKey] = 1;
+        withdrawalsOwed[withdrawalRecipient] += amount;
+    }
+
+    // Returns a signed Ethereum transaction from the first available deposit address
+    /*
+    function getWithdrawalTransaction(
+        address withdrawalRecipient
+    ) public view returns (bytes memory) {
+        return "Not implemented";
+    }
+    */
 }

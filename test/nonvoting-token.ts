@@ -12,6 +12,8 @@ const ethTestChainId = 30_121;
 const publicProvider = new ethers.providers.JsonRpcProvider('http://localhost:23545');
 // The storage slot of the balances mapping in our TestERC20 token is 0
 const daoTokenBalanceMappingSlot = '0x00';
+// The withdrawals slot in the nonvoting token contract is 3
+const nvTokenWithdrawalsSlot = '0x03';
 
 function getMappingStorageSlot(mappingKey: string, mappingSlot: string): string {
 	return ethers.utils.keccak256(ethers.utils.hexConcat([ethers.utils.hexZeroPad(mappingKey, 32), ethers.utils.hexZeroPad(mappingSlot, 32)]));
@@ -116,7 +118,7 @@ describe('Nonvoting Token', () => {
 
 		const dd = await darkDaoFactory.deploy(
 			blockHeaderOracle.address, stateVerifier.address, nvDaoTokenPredictedAddress, daoToken.address,
-			daoTokenBalanceMappingSlot, ethers.BigNumber.from((10n ** 18n) * 8n),
+			daoTokenBalanceMappingSlot, nvTokenWithdrawalsSlot, ethers.BigNumber.from((10n ** 18n) * 8n),
 			minimumBid, auctionDuration);
 		await dd.deployed();
 

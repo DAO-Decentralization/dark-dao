@@ -11,7 +11,7 @@ contract NonVotingDAOToken is ERC20, ERC20Permit {
     mapping(uint256 => uint256) mints;
     mapping(bytes32 => uint256) withdrawalAmounts;
 
-    event Withdrawal(address indexed sender, uint256 amount, uint256 indexed nonce);
+    event Withdrawal(address indexed sender, uint256 amount, bytes32 indexed nonceHash);
 
     constructor(
         address _underlyingToken,
@@ -38,12 +38,13 @@ contract NonVotingDAOToken is ERC20, ERC20Permit {
         _mint(recipientAddress, amount);
     }
 
-    function beginWithdrawal(uint256 amount, uint256 nonce) public {
+    function beginWithdrawal(uint256 amount, bytes32 nonceHash) public {
+        require(amount > 0, "Withdrawal amount must be positive");
         _burn(msg.sender, amount);
-        bytes32 hash = keccak256(abi.encode("withdrawal", msg.sender, amount, nonce));
+        bytes32 hash = keccak256(abi.encode("withdrawal", msg.sender, amount, nonceHash));
         require(withdrawalAmounts[hash] == 0, "Use a different nonce");
         withdrawalAmounts[hash] = amount;
 
-        emit Withdrawal(msg.sender, amount, nonce);
+        emit Withdrawal(msg.sender, amount, nonceHash);
     }
 }
