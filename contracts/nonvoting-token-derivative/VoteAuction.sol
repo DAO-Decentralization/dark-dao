@@ -45,7 +45,7 @@ contract VoteAuction {
         }
         require(bidValue <= deposited[msg.sender], "Bid value greater than deposited amount");
         deposited[msg.sender] -= bidValue;
-        currentBid[hash] = Bid({bidValue: msg.value, bidder: msg.sender});
+        currentBid[hash] = Bid({bidValue: bidValue, bidder: msg.sender});
         emit BidSubmitted(hash, msg.value);
     }
 

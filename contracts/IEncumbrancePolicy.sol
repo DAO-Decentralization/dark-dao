@@ -7,7 +7,7 @@ interface IEncumbrancePolicy {
     // The policy is contacted when the caller enrolls for some period of time
     // The policy may revert the enrollment if it wishes to reject the request
     function notifyEncumbranceEnrollment(
-        address accountOnwer,
+        address accountOwner,
         address account,
         uint256 expiration,
         bytes calldata data

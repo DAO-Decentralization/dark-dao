@@ -29,39 +29,45 @@ describe('TransactionParsing', () => {
 
 describe('TransactionSerializer', () => {
 	async function deployTxSerializer() {
-		const TransactionSerializer = await ethers.getContractFactory('TransactionSerializer');
-		const ts = await TransactionSerializer.deploy();
+		const transactionSerializerLibrary = await ethers.getContractFactory('TransactionSerializer');
+		const tsl = await transactionSerializerLibrary.deploy();
+		const TransactionSerializerTest = await ethers.getContractFactory('TransactionSerializerTest', {
+			libraries: {
+				TransactionSerializer: tsl.address,
+			},
+		});
+		const ts = await TransactionSerializerTest.deploy();
 		return {ts};
 	}
 
 	it('Should serialize a basic type-2 transaction', async () => {
 		const {ts} = await deployTxSerializer();
 		const tx = {
-		    chainId: 1,
-		    nonce: 0,
-		    maxPriorityFeePerGas: 0x3B_9A_CA_00,
-		    maxFeePerGas: 0x02_54_0B_E4_00,
-		    gasLimit: 0x52_08,
-		    destination: '0x1234567890AbcdEF1234567890aBcdef12345678',
-		    amount: '0x0de0b6b3a7640000',
-		    payload: '0x010203040506',
+			chainId: 1,
+			nonce: 0,
+			maxPriorityFeePerGas: 0x3B_9A_CA_00,
+			maxFeePerGas: 0x02_54_0B_E4_00,
+			gasLimit: 0x52_08,
+			destination: '0x1234567890AbcdEF1234567890aBcdef12345678',
+			amount: '0x0de0b6b3a7640000',
+			payload: '0x010203040506',
 		};
 		const serializedUnsignedTx = await ts.serializeTransaction(tx);
 		expect(serializedUnsignedTx).to.equal('0x02f60180843b9aca008502540be400825208941234567890abcdef1234567890abcdef12345678880de0b6b3a764000086010203040506c0');
 	});
 
 	it('Should serialize a type-2 transaction whose destination address has leading zero bytes', async () => {
-	    const {ts} = await deployTxSerializer();
-	    const tx = {
-	        chainId: 1,
-	        nonce: 0,
-	        maxPriorityFeePerGas: 0,
-	        maxFeePerGas: 0,
-	        gasLimit: 25_000,
-	        destination: '0x000037dbacB1B1164F0a03374CEf4A4A6D1B56D8',
-	        amount: '0',
-	        payload: '0x',
-	    };
+		const {ts} = await deployTxSerializer();
+		const tx = {
+			chainId: 1,
+			nonce: 0,
+			maxPriorityFeePerGas: 0,
+			maxFeePerGas: 0,
+			gasLimit: 25_000,
+			destination: '0x000037dbacB1B1164F0a03374CEf4A4A6D1B56D8',
+			amount: '0',
+			payload: '0x',
+		};
 		const serializedUnsignedTx = await ts.serializeTransaction(tx);
 		expect(serializedUnsignedTx).to.equal('0x02df018080808261a894000037dbacb1b1164f0a03374cef4a4a6d1b56d88080c0');
 	});

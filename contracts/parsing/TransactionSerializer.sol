@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.0 <0.9.0;
 
-import "hardhat/console.sol";
 import "solidity-rlp/contracts/RLPReader.sol";
 import {Type2TxMessage} from "./EthereumTransaction.sol";
 import {RLPEncode} from "./RLPEncode.sol";
 
-contract TransactionSerializer {
+library TransactionSerializer {
     function serializeTransaction(Type2TxMessage calldata _tx) public pure returns (bytes memory txBytes) {
         bytes[] memory txRlpItems = new bytes[](9);
         txRlpItems[0] = RLPEncode.encodeUint(_tx.chainId);

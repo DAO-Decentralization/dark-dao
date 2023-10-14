@@ -3,6 +3,7 @@ pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
 
 import "./PrivateKeyGenerator.sol";
@@ -10,6 +11,8 @@ import "./IBlockHeaderOracle.sol";
 import {StorageProof, ProvethVerifier} from "./proveth/ProvethVerifier.sol";
 import {VoteAuction} from "./VoteAuction.sol";
 import {EIP712DomainParams, EIP712Utils} from "../EIP712Utils.sol";
+import {TransactionSerializer} from "../parsing/TransactionSerializer.sol";
+import {Type2TxMessage} from "../parsing/EthereumTransaction.sol";
 
 struct DepositReceipt {
     address recipient;
@@ -42,6 +45,8 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
     address public ethNvToken;
     // Ethereum address of the underlying DAO token
     address public ethDaoToken;
+    // Network ID of the public EVM network (Ethereum)
+    uint256 public ethChainId;
     // Storage slot of the balance mapping in the underlying DAO token contract
     uint256 daoTokenBalanceSlot;
     // Minimum deposit amount
@@ -51,19 +56,21 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
 
     address[] private accounts;
     mapping(address => bool) deposited;
-    mapping(address => uint256) depositAmount;
+    mapping(address => uint256) daoTokenBalance;
     mapping(address => bytes) accountKeys;
     mapping(address => uint256) accountNonces;
-    uint256 private totalDeposits = 0;
+    uint256 private totalDaoTokenBalance = 0;
     uint256[] private depositBlockNumbers;
     DepositReceipt[] private deposits;
+    uint256 private withdrawalAddressIndex = 0;
 
     mapping(bytes32 => uint256) withdrawalState;
-    mapping(address => uint256) withdrawalsOwed;
+    mapping(address => uint256) withdrawalOwed;
 
     constructor(
         IBlockHeaderOracle _ethBlockHeaderOracle,
         ProvethVerifier _stateVerifier,
+        uint256 _ethChainId,
         address _ethNvToken,
         address _ethDaoToken,
         uint256 _daoTokenBalanceSlot,
@@ -74,6 +81,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
     ) VoteAuction(minimumBid, auctionDuration) {
         ethBlockHeaderOracle = _ethBlockHeaderOracle;
         stateVerifier = _stateVerifier;
+        ethChainId = _ethChainId;
         ethNvToken = _ethNvToken;
         ethDaoToken = _ethDaoToken;
         daoTokenBalanceSlot = _daoTokenBalanceSlot;
@@ -124,7 +132,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         require(depositedAmount > minDeposit, "Minimum deposit not reached");
         require(!deposited[depositAddress], "Deposit already used");
         deposited[depositAddress] = true;
-        depositAmount[depositAddress] = depositedAmount;
+        daoTokenBalance[depositAddress] = depositedAmount;
         accountKeys[depositAddress] = accountKey;
         accounts.push(depositAddress);
 
@@ -138,7 +146,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
             bytes.concat(messageHash),
             ""
         );
-        totalDeposits += depositedAmount;
+        totalDaoTokenBalance += depositedAmount;
         deposits.push(
             DepositReceipt({
                 recipient: nvTokenRecipient,
@@ -240,15 +248,38 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
 
         require(withdrawalState[storageKey] == 0, "Withdrawal already registered");
         withdrawalState[storageKey] = 1;
-        withdrawalsOwed[withdrawalRecipient] += amount;
+        withdrawalOwed[withdrawalRecipient] += amount;
+        // Account for withdrawal
+        totalDaoTokenBalance -= amount;
     }
 
     // Returns a signed Ethereum transaction from the first available deposit address
-    /*
+    // TODO: Leaks whether a particular account will receive DAO tokens from the Dark DAO
     function getWithdrawalTransaction(
         address withdrawalRecipient
-    ) public view returns (bytes memory) {
-        return "Not implemented";
+    ) public view returns (bytes memory unsignedTx, bytes memory signature) {
+        address withdrawalAccount = accounts[withdrawalAddressIndex];
+        uint256 amountToWithdraw = Math.min(withdrawalOwed[withdrawalRecipient], daoTokenBalance[withdrawalAccount]);
+        bytes4 transferSelector = bytes4(keccak256(bytes("transfer(address,uint256)")));
+        bytes memory transferData = abi.encodeWithSelector(transferSelector, withdrawalRecipient, amountToWithdraw);
+        unsignedTx = TransactionSerializer.serializeTransaction(
+            Type2TxMessage({
+                chainId: ethChainId,
+                nonce: accountNonces[withdrawalAccount],
+                maxPriorityFeePerGas: 1 gwei,
+                maxFeePerGas: 1_000 gwei,
+                gasLimit: 100_000,
+                destination: bytes.concat(bytes20(ethDaoToken)),
+                amount: 0,
+                payload: transferData
+            })
+        );
+        bytes32 unsignedTxHash = keccak256(unsignedTx);
+        signature = Sapphire.sign(
+            Sapphire.SigningAlg.Secp256k1PrehashedKeccak256,
+            accountKeys[withdrawalAccount],
+            bytes.concat(unsignedTxHash),
+            ""
+        );
     }
-    */
 }
