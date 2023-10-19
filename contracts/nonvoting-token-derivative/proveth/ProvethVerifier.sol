@@ -11,6 +11,13 @@ struct StorageProof {
     bytes storageProofStack;
 }
 
+struct TransactionProof {
+    bytes rlpBlockHeader;
+    bytes32 transactionHash;
+    bytes transactionIndexRlp;
+    bytes transactionProofStack;
+}
+
 contract ProvethVerifier {
     using RLPReader for RLPReader.RLPItem;
     using RLPReader for bytes;
@@ -18,29 +25,6 @@ contract ProvethVerifier {
     uint256 constant BLOCK_HEADER_STATE_ROOT_INDEX = 3;
     uint256 constant BLOCK_HEADER_TX_ROOT_INDEX = 4;
     uint256 constant ACCOUNT_STORAGE_ROOT_INDEX = 2;
-
-    struct UnsignedTransaction {
-        uint256 nonce;
-        uint256 gasprice;
-        uint256 startgas;
-        address to;
-        uint256 value;
-        bytes data;
-        bool isContractCreation;
-    }
-
-    struct SignedTransaction {
-        uint256 nonce;
-        uint256 gasprice;
-        uint256 startgas;
-        address to;
-        uint256 value;
-        bytes data;
-        uint256 v;
-        uint256 r;
-        uint256 s;
-        bool isContractCreation;
-    }
 
     function isEmpty(RLPReader.RLPItem memory item) internal pure returns (bool) {
         if (item.len != 1) {
@@ -64,54 +48,6 @@ contract ProvethVerifier {
             b := byte(0, mload(memPtr))
         }
         return b == 0x80 /* empty byte string */;
-    }
-
-    function decodeUnsignedTx(bytes memory rlpUnsignedTx) internal pure returns (UnsignedTransaction memory t) {
-        RLPReader.RLPItem[] memory fields = rlpUnsignedTx.toRlpItem().toList();
-        require(fields.length == 6);
-        address potentialAddress;
-        bool isContractCreation;
-        if (isEmpty(fields[3])) {
-            potentialAddress = 0x0000000000000000000000000000000000000000;
-            isContractCreation = true;
-        } else {
-            potentialAddress = fields[3].toAddress();
-            isContractCreation = false;
-        }
-        t = UnsignedTransaction(
-            fields[0].toUint(), // nonce
-            fields[1].toUint(), // gasprice
-            fields[2].toUint(), // startgas
-            potentialAddress, // to
-            fields[4].toUint(), // value
-            fields[5].toBytes(), // data
-            isContractCreation
-        );
-    }
-
-    function decodeSignedTx(bytes memory rlpSignedTx) internal pure returns (SignedTransaction memory t) {
-        RLPReader.RLPItem[] memory fields = rlpSignedTx.toRlpItem().toList();
-        address potentialAddress;
-        bool isContractCreation;
-        if (isEmpty(fields[3])) {
-            potentialAddress = 0x0000000000000000000000000000000000000000;
-            isContractCreation = true;
-        } else {
-            potentialAddress = fields[3].toAddress();
-            isContractCreation = false;
-        }
-        t = SignedTransaction(
-            fields[0].toUint(),
-            fields[1].toUint(),
-            fields[2].toUint(),
-            potentialAddress,
-            fields[4].toUint(),
-            fields[5].toBytes(),
-            fields[6].toUint(),
-            fields[7].toUint(),
-            fields[8].toUint(),
-            isContractCreation
-        );
     }
 
     function decodeNibbles(bytes memory compact, uint skipNibbles) internal pure returns (bytes memory nibbles) {
@@ -171,92 +107,19 @@ contract ProvethVerifier {
         return i;
     }
 
-    struct Proof {
-        uint256 kind;
-        bytes rlpBlockHeader;
-        bytes32 txRootHash;
-        bytes rlpTxIndex;
-        uint txIndex;
-        bytes mptKey;
-        RLPReader.RLPItem[] stack;
-    }
+    function validateTxProof(TransactionProof calldata txProof) public pure returns (bytes memory) {
+        RLPReader.RLPItem[] memory blockHeader = txProof.rlpBlockHeader.toRlpItem().toList();
+        bytes32 txRoot = bytes32(blockHeader[BLOCK_HEADER_TX_ROOT_INDEX].toUint());
 
-    function decodeProofBlob(bytes memory proofBlob) internal pure returns (Proof memory proof) {
-        RLPReader.RLPItem[] memory proofFields = proofBlob.toRlpItem().toList();
-        bytes memory rlpTxIndex = proofFields[2].toRlpBytes();
-        proof = Proof(
-            proofFields[0].toUint(),
-            proofFields[1].toRlpBytes(),
-            bytes32(proofFields[1].toList()[BLOCK_HEADER_TX_ROOT_INDEX].toUint()),
-            rlpTxIndex,
-            proofFields[2].toUint(),
-            decodeNibbles(rlpTxIndex, 0),
-            proofFields[3].toList()
+        // The key in the trie is the index of the address in RLP
+        bytes memory txKey = txProof.transactionIndexRlp;
+        // We must convert the bytes of the keccak256 to nibbles for validateMPTProof
+        bytes memory txRlp = validateMPTProof(
+            txRoot,
+            txKey,
+            RLPReader.toList(RLPReader.toRlpItem(txProof.transactionProofStack))
         );
-    }
-
-    uint8 public constant TX_PROOF_RESULT_PRESENT = 1;
-    uint8 public constant TX_PROOF_RESULT_ABSENT = 2;
-
-    function txProof(
-        bytes32 blockHash,
-        bytes memory proofBlob
-    )
-        public
-        pure
-        returns (
-            uint8 result, // see TX_PROOF_RESULT_*
-            uint256 index,
-            uint256 nonce,
-            uint256 gasprice,
-            uint256 startgas,
-            address to, // 20 byte address for "regular" tx,
-            // empty for contract creation tx
-            uint256 value,
-            bytes memory data,
-            uint256 v,
-            uint256 r,
-            uint256 s,
-            bool isContractCreation
-        )
-    {
-        SignedTransaction memory t;
-        (result, index, t) = validateTxProof(blockHash, proofBlob);
-        nonce = t.nonce;
-        gasprice = t.gasprice;
-        startgas = t.startgas;
-        to = t.to;
-        value = t.value;
-        data = t.data;
-        v = t.v;
-        r = t.r;
-        s = t.s;
-        isContractCreation = t.isContractCreation;
-    }
-
-    function validateTxProof(
-        bytes32 blockHash,
-        bytes memory proofBlob
-    ) internal pure returns (uint8 result, uint256 index, SignedTransaction memory t) {
-        result = 0;
-        index = 0;
-        Proof memory proof = decodeProofBlob(proofBlob);
-        if (proof.kind != 1) {
-            revert();
-        }
-
-        if (keccak256(proof.rlpBlockHeader) != blockHash) {
-            revert();
-        }
-
-        bytes memory rlpTx = validateMPTProof(proof.txRootHash, proof.mptKey, proof.stack);
-
-        if (rlpTx.length == 0) {
-            // empty node
-            return (TX_PROOF_RESULT_ABSENT, proof.txIndex, t);
-        } else {
-            return (TX_PROOF_RESULT_PRESENT, proof.txIndex, decodeSignedTx(rlpTx));
-        }
+        return txRlp;
     }
 
     function validateStorageProof(StorageProof calldata storageProof) public pure returns (uint256) {

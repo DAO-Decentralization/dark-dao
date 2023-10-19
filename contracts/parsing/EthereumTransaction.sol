@@ -12,3 +12,10 @@ struct Type2TxMessage {
     bytes payload;
     // accessList has been omitted
 }
+
+struct Type2TxMessageSigned {
+    Type2TxMessage transaction;
+    uint256 r;
+    uint256 s;
+    uint256 v;
+}

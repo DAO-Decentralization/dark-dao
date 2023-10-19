@@ -71,4 +71,48 @@ describe('TransactionSerializer', () => {
 		const serializedUnsignedTx = await ts.serializeTransaction(tx);
 		expect(serializedUnsignedTx).to.equal('0x02df018080808261a894000037dbacb1b1164f0a03374cef4a4a6d1b56d88080c0');
 	});
+
+	it('Should serialize a signed type-2 transaction', async () => {
+		const {ts} = await deployTxSerializer();
+		const tx = {
+			chainId: 1,
+			nonce: 0,
+			maxPriorityFeePerGas: 2_000_000_000,
+			maxFeePerGas: 25_000_000_000,
+			gasLimit: 22_000,
+			destination: '0x0102030405060708091011121314151617181920',
+			amount: 0,
+			payload: '0xde',
+		};
+		const signedTx = {
+			transaction: tx,
+			r: '0x56c621b4ff1c59a99a2ae5cd7575e9f7f3de7fefdefb48f54c61d11b4d4ae61b',
+			s: '0x53ae4db88e3fec34fc0c24d7119a10173f5dde5170520960d7aeae48d42396f7',
+			v: 0,
+		};
+		const serializedSignedTx = await ts.serializeSignedTransaction(signedTx);
+		expect(serializedSignedTx).to.equal('0x02f86c018084773594008505d21dba008255f09401020304050607080910111213141516171819208081dec080a056c621b4ff1c59a99a2ae5cd7575e9f7f3de7fefdefb48f54c61d11b4d4ae61ba053ae4db88e3fec34fc0c24d7119a10173f5dde5170520960d7aeae48d42396f7');
+	});
+
+	it('Should serialize a signed type-2 transaction with a small r value', async () => {
+		const {ts} = await deployTxSerializer();
+		const tx = {
+			chainId: 1,
+			nonce: 0,
+			maxPriorityFeePerGas: 2_000_000_000,
+			maxFeePerGas: 25_000_000_000,
+			gasLimit: 22_000,
+			destination: '0x0102030405060708091011121314151617181920',
+			amount: 0,
+			payload: '0xde',
+		};
+		const signedTx = {
+			transaction: tx,
+			r: '0x56c621b4ff1c59a99a2ae5cd7575e9f7f3de7fefdefb48f54c61d11b4d4ae61b',
+			s: '0x53ae4db88e3fec34fc0c24d7119a10173f5dde5170520960d7aeae48d42396f7',
+			v: 0,
+		};
+		const serializedSignedTx = await ts.serializeSignedTransaction(signedTx);
+		expect(serializedSignedTx).to.equal('0x02f86c018084773594008505d21dba008255f09401020304050607080910111213141516171819208081dec080a056c621b4ff1c59a99a2ae5cd7575e9f7f3de7fefdefb48f54c61d11b4d4ae61ba053ae4db88e3fec34fc0c24d7119a10173f5dde5170520960d7aeae48d42396f7');
+	});
 });

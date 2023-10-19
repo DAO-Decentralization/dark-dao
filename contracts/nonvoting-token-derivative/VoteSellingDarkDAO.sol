@@ -8,11 +8,11 @@ import "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
 
 import "./PrivateKeyGenerator.sol";
 import "./IBlockHeaderOracle.sol";
-import {StorageProof, ProvethVerifier} from "./proveth/ProvethVerifier.sol";
+import {StorageProof, ProvethVerifier, TransactionProof} from "./proveth/ProvethVerifier.sol";
 import {VoteAuction} from "./VoteAuction.sol";
 import {EIP712DomainParams, EIP712Utils} from "../EIP712Utils.sol";
 import {TransactionSerializer} from "../parsing/TransactionSerializer.sol";
-import {Type2TxMessage} from "../parsing/EthereumTransaction.sol";
+import {Type2TxMessage, Type2TxMessageSigned} from "../parsing/EthereumTransaction.sol";
 
 struct DepositReceipt {
     address recipient;
@@ -253,19 +253,17 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         totalDaoTokenBalance -= amount;
     }
 
-    // Returns a signed Ethereum transaction from the first available deposit address
-    // TODO: Leaks whether a particular account will receive DAO tokens from the Dark DAO
     function getWithdrawalTransaction(
-        address withdrawalRecipient
-    ) public view returns (bytes memory unsignedTx, bytes memory signature) {
-        address withdrawalAccount = accounts[withdrawalAddressIndex];
-        uint256 amountToWithdraw = Math.min(withdrawalOwed[withdrawalRecipient], daoTokenBalance[withdrawalAccount]);
+        uint256 nonce,
+        address withdrawalRecipient,
+        uint256 amountToWithdraw
+    ) public view returns (bytes memory unsignedTx) {
         bytes4 transferSelector = bytes4(keccak256(bytes("transfer(address,uint256)")));
         bytes memory transferData = abi.encodeWithSelector(transferSelector, withdrawalRecipient, amountToWithdraw);
         unsignedTx = TransactionSerializer.serializeTransaction(
             Type2TxMessage({
                 chainId: ethChainId,
-                nonce: accountNonces[withdrawalAccount],
+                nonce: nonce,
                 maxPriorityFeePerGas: 1 gwei,
                 maxFeePerGas: 1_000 gwei,
                 gasLimit: 100_000,
@@ -274,6 +272,18 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
                 payload: transferData
             })
         );
+    }
+
+    // Returns a signed Ethereum transaction from the first available deposit address
+    // TODO: Leaks whether a particular account will receive DAO tokens from the Dark DAO
+    function getWithdrawalTransaction(
+        address withdrawalRecipient
+    ) public view returns (bytes memory unsignedTx, bytes memory signature) {
+        address withdrawalAccount = accounts[withdrawalAddressIndex];
+        uint256 nonce = accountNonces[withdrawalAccount];
+        uint256 amountToWithdraw = Math.min(withdrawalOwed[withdrawalRecipient], daoTokenBalance[withdrawalAccount]);
+        require(amountToWithdraw > 0, "A withdrawal is not due to this account");
+        unsignedTx = getWithdrawalTransaction(nonce, withdrawalRecipient, amountToWithdraw);
         bytes32 unsignedTxHash = keccak256(unsignedTx);
         signature = Sapphire.sign(
             Sapphire.SigningAlg.Secp256k1PrehashedKeccak256,
@@ -282,4 +292,47 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
             ""
         );
     }
+
+    function showWithdrawalInclusion(
+        uint256 nonce,
+        address withdrawalRecipient,
+        uint256 amountToWithdraw,
+        Type2TxMessageSigned calldata signedTx,
+        TransactionProof memory inclusionProof,
+        uint256 proofBlockNumber
+    ) public {
+        require(signedTx.transaction.nonce == nonce, "Wrong nonce");
+
+        // Calculate signer address
+        bytes memory unsignedTxData = getWithdrawalTransaction(nonce, withdrawalRecipient, amountToWithdraw);
+        bytes32 unsignedTxHash = keccak256(unsignedTxData);
+        bytes memory signature = bytes.concat(bytes32(signedTx.r), bytes32(signedTx.s), bytes1(uint8(27 + signedTx.v)));
+        (address signer, ECDSA.RecoverError error) = ECDSA.tryRecover(unsignedTxHash, signature);
+        require(error == ECDSA.RecoverError.NoError, "Invalid signature");
+
+        // Ensure that this is an up-to-date withdrawal transaction
+        address withdrawalAccount = accounts[withdrawalAddressIndex];
+        require(signer == withdrawalAccount, "Wrong signer/not the current withdrawal account");
+        require(nonce == accountNonces[withdrawalAccount], "Nonce has already been accounted for");
+
+        // Prove inclusion
+        require(
+            keccak256(inclusionProof.rlpBlockHeader) == ethBlockHeaderOracle.getBlockHeaderHash(proofBlockNumber),
+            "Block hash incorrect or not found in oracle"
+        );
+        bytes memory includedTx = stateVerifier.validateTxProof(inclusionProof);
+        bytes32 signedTxHash = keccak256(TransactionSerializer.serializeSignedTransaction(signedTx));
+        require(keccak256(includedTx) == signedTxHash, "Inclusion proof of an incorrect or absent transaction");
+
+        // Process the withdrawal
+        withdrawalOwed[withdrawalRecipient] -= amountToWithdraw;
+
+        // Find the next withdrawal address
+        daoTokenBalance[withdrawalAccount] -= amountToWithdraw;
+        if (daoTokenBalance[withdrawalAccount] == 0) {
+            withdrawalAddressIndex++;
+        }
+    }
+
+    // Nice-to-have: Update DAO token balance (multiple deposits to same address), coordinate sharing other tokens
 }
