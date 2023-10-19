@@ -276,7 +276,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
 
     // Returns a signed Ethereum transaction from the first available deposit address
     // TODO: Leaks whether a particular account will receive DAO tokens from the Dark DAO
-    function getWithdrawalTransaction(
+    function getSignedWithdrawalTransaction(
         address withdrawalRecipient
     ) public view returns (bytes memory unsignedTx, bytes memory signature) {
         address withdrawalAccount = accounts[withdrawalAddressIndex];

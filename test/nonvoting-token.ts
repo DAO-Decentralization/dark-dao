@@ -273,7 +273,7 @@ describe('Nonvoting Token', () => {
 			// Get withdrawal tx
 			// TODO: Expose function to learn this
 			const withdrawalAddress = depositAddress;
-			const withdrawalTx = await dd.getWithdrawalTransaction(withdrawalRecipient);
+			const withdrawalTx = await dd.getSignedWithdrawalTransaction(withdrawalRecipient);
 			const ethSig = derToEthSignature(withdrawalTx.signature, ethers.utils.keccak256(withdrawalTx.unsignedTx), withdrawalAddress, false);
 			const signedWithdrawalTx = ethers.utils.serializeTransaction(ethers.utils.parseTransaction(withdrawalTx.unsignedTx), ethSig);
 
