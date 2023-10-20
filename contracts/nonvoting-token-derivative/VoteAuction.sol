@@ -12,6 +12,7 @@ contract VoteAuction {
     mapping(address => uint256) private deposited;
     uint256 public minimumBid;
     uint256 public auctionDuration;
+    uint256 private totalAuctionEarnings;
 
     event AuctionCreated(bytes32 indexed hash, uint256 auctionEnd);
     event BidSubmitted(bytes32 indexed hash, uint256 value);
@@ -19,6 +20,10 @@ contract VoteAuction {
     constructor(uint256 _minimumBid, uint256 _auctionDuration) {
         minimumBid = _minimumBid;
         auctionDuration = _auctionDuration;
+    }
+
+    function getTotalAuctionEarnings() internal view returns (uint256) {
+        return totalAuctionEarnings;
     }
 
     function createAuction(bytes32 hash) public payable {
@@ -45,6 +50,7 @@ contract VoteAuction {
         }
         require(bidValue <= deposited[msg.sender], "Bid value greater than deposited amount");
         deposited[msg.sender] -= bidValue;
+        totalAuctionEarnings += bidValue - currentBid[hash].bidValue;
         currentBid[hash] = Bid({bidValue: bidValue, bidder: msg.sender});
         emit BidSubmitted(hash, msg.value);
     }

@@ -36,7 +36,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
     IBlockHeaderOracle private ethBlockHeaderOracle;
     ProvethVerifier public stateVerifier;
     bytes private signingKey;
-    bytes32 private macKey;
+    bytes32 private depositAddressGenKey;
     bytes32 private depositIdRandomness;
     address public darkDaoSignerAddress;
 
@@ -48,11 +48,11 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
     // Network ID of the public EVM network (Ethereum)
     uint256 public ethChainId;
     // Storage slot of the balance mapping in the underlying DAO token contract
-    uint256 daoTokenBalanceSlot;
+    uint256 public daoTokenBalanceSlot;
     // Minimum deposit amount
-    uint256 minDeposit;
+    uint256 public minDeposit;
     // Storage slot of the withdrawalAmounts mapping in the nonvoting token contract
-    uint256 nvTokenWithdrawalsSlot;
+    uint256 public nvTokenWithdrawalsSlot;
 
     address[] private accounts;
     mapping(address => bool) deposited;
@@ -63,6 +63,10 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
     uint256[] private depositBlockNumbers;
     DepositReceipt[] private deposits;
     uint256 private withdrawalAddressIndex = 0;
+    // Total bribes paid out to users
+    uint256 private totalBribePayoutAmount = 0;
+    // Total amount of the native token (ROSE) contributed in deposits
+    uint256 private totalNativeDepositAmount = 0;
 
     mapping(bytes32 => uint256) withdrawalState;
     mapping(address => uint256) withdrawalOwed;
@@ -88,8 +92,14 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         nvTokenWithdrawalsSlot = _nvTokenWithdrawalsSlot;
         minDeposit = _minDeposit;
         (signingKey, darkDaoSignerAddress) = generatePrivateKey("signer");
-        macKey = bytes32(Sapphire.randomBytes(32, "macKey"));
+        depositAddressGenKey = bytes32(Sapphire.randomBytes(32, "depositAddressGenKey"));
         depositIdRandomness = bytes32(Sapphire.randomBytes(32, "depositIdRandomness"));
+    }
+
+    // Returns the total amount of the native token stored in this contract for
+    // withdrawal by nvDAO token holders via the registerWithdrawal function
+    function getNativeTokenBalance() private view returns (uint256) {
+        return getTotalAuctionEarnings() + totalNativeDepositAmount - totalBribePayoutAmount;
     }
 
     // You MUST save the encryptedAddressInfo for after you deposit to this address!
@@ -100,21 +110,36 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         (accountKey, depositAddress) = generatePrivateKey(bytes.concat("deposit", bytes20(depositor)));
         bytes32 nonce = bytes32(Sapphire.randomBytes(32, "depositNonce"));
         wrappedAddressInfo = abi.encode(
-            Sapphire.encrypt(macKey, nonce, abi.encode(accountKey, depositAddress, depositor), "deposit"),
+            Sapphire.encrypt(depositAddressGenKey, nonce, abi.encode(accountKey, depositAddress, depositor), "deposit"),
             nonce
         );
+    }
+
+    // TODO: Should we restrict access to this function to depositors?
+    // Then at least you would have to participate with the minimum deposit in order to read this ratio
+    function nativeDepositRequired(uint256 daoTokens) public view returns (uint256) {
+        if (totalDaoTokenBalance == 0) {
+            return 0;
+        }
+        require(daoTokens < 2 ** 128, "Amount too high");
+        return (daoTokens * getNativeTokenBalance()) / totalDaoTokenBalance;
     }
 
     function registerDeposit(
         bytes memory wrappedAddressInfo,
         uint256 proofBlockNumber,
         StorageProof memory storageProof
-    ) public {
+    ) public payable {
         (bytes memory encryptedAddressInfo, bytes32 addressInfoNonce) = abi.decode(
             wrappedAddressInfo,
             (bytes, bytes32)
         );
-        bytes memory addressInfo = Sapphire.decrypt(macKey, addressInfoNonce, encryptedAddressInfo, "deposit");
+        bytes memory addressInfo = Sapphire.decrypt(
+            depositAddressGenKey,
+            addressInfoNonce,
+            encryptedAddressInfo,
+            "deposit"
+        );
         (bytes memory accountKey, address depositAddress, address nvTokenRecipient) = abi.decode(
             addressInfo,
             (bytes, address, address)
@@ -135,6 +160,15 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         daoTokenBalance[depositAddress] = depositedAmount;
         accountKeys[depositAddress] = accountKey;
         accounts.push(depositAddress);
+
+        // Require deposits to be proportional to the current bribe value
+        if (totalDaoTokenBalance > 0) {
+            require(
+                msg.value >= (depositedAmount * getNativeTokenBalance()) / totalDaoTokenBalance,
+                "Value proportional to pre-existing Dark DAO earnings must be paid"
+            );
+        }
+        totalNativeDepositAmount += msg.value;
 
         bytes32 depositId = keccak256(
             bytes.concat(bytes("deposit"), bytes20(nvTokenRecipient), bytes20(depositAddress), depositIdRandomness)
@@ -225,6 +259,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         bytes32 nonceHash,
         bytes32 witness,
         address withdrawalRecipient,
+        address payable bribesWithdrawalRecipient,
         uint256 proofBlockNumber,
         StorageProof memory storageProof
     ) public {
@@ -245,10 +280,19 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
             keccak256(storageProof.rlpBlockHeader) == ethBlockHeaderOracle.getBlockHeaderHash(proofBlockNumber),
             "Block hash incorrect or not found in oracle"
         );
+        uint256 burnedAmount = stateVerifier.validateStorageProof(storageProof);
+        require(amount == burnedAmount, "State proof shows withdrawal never happened");
 
         require(withdrawalState[storageKey] == 0, "Withdrawal already registered");
         withdrawalState[storageKey] = 1;
+
+        // Try sending the amount owed; otherwise, it's forfeited
+        uint256 bribeOwed = (getNativeTokenBalance() * amount) / totalDaoTokenBalance;
+        bribesWithdrawalRecipient.transfer(bribeOwed);
+
         withdrawalOwed[withdrawalRecipient] += amount;
+        totalBribePayoutAmount += bribeOwed;
+
         // Account for withdrawal
         totalDaoTokenBalance -= amount;
     }

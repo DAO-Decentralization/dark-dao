@@ -193,7 +193,7 @@ describe('Nonvoting Token', () => {
 		return {witness, nonceHash};
 	}
 
-	async function registerWithdrawal(nvTokenHolder, withdrawalAmount, nonceHash, witness, nvDaoToken, dd, withdrawalRecipient, blockHeaderOracle = undefined) {
+	async function registerWithdrawal(nvTokenHolder, withdrawalAmount, nonceHash, witness, nvDaoToken, dd, withdrawalRecipient, bribesRecipient, blockHeaderOracle = undefined) {
 		// Calculate the storage slot
 		const withdrawalHash = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['string', 'address', 'uint256', 'bytes32'], ['withdrawal', nvTokenHolder.address, withdrawalAmount, nonceHash]));
 		const withdrawalStorageSlot = getMappingStorageSlot(withdrawalHash, nvTokenWithdrawalsSlot);
@@ -221,7 +221,7 @@ describe('Nonvoting Token', () => {
 			storageProofStack: ethers.utils.RLP.encode(proof.storageProof[0].proof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
 		};
 
-		await dd.registerWithdrawal(nvTokenHolder.address, withdrawalAmount, nonceHash, witness, withdrawalRecipient, proofBlock.number, storageProof).then(async tx => tx.wait());
+		await dd.registerWithdrawal(nvTokenHolder.address, withdrawalAmount, nonceHash, witness, withdrawalRecipient, bribesRecipient, proofBlock.number, storageProof).then(async tx => tx.wait());
 	}
 
 	async function getTxInclusionProof(blockNumber: number, txIndex: number) {
@@ -313,9 +313,11 @@ describe('Nonvoting Token', () => {
 
 			const withdrawalAmount = depositAmount / 2n;
 			const {witness, nonceHash} = await beginWithdrawal(ownerPublic, nvDaoToken, withdrawalAmount);
-			// Lol account
+			// Lol account (Ethereum account receiving the DAO tokens)
 			const withdrawalRecipient = '0xc42A84D4f2f511f90563dc984311Ab737ee56eFD';
-			await registerWithdrawal(ownerPublic, withdrawalAmount, nonceHash, witness, nvDaoToken, dd, withdrawalRecipient, blockHeaderOracle);
+			// Lol2 (Oasis account receiving the portion of the accumulated bribes + equalizing deposits)
+			const bribesRecipient = '0x15B5F4c6F916d7E1B742deb0b06fd25a0490ef55';
+			await registerWithdrawal(ownerPublic, withdrawalAmount, nonceHash, witness, nvDaoToken, dd, withdrawalRecipient, bribesRecipient, blockHeaderOracle);
 
 			// Get withdrawal tx
 			const withdrawalAddress = depositAddress;
@@ -348,7 +350,7 @@ describe('Nonvoting Token', () => {
 			const {witness, nonceHash} = await beginWithdrawal(ownerPublic, nvDaoToken, withdrawalAmount);
 			// Lol account
 			const withdrawalRecipient = '0xc42A84D4f2f511f90563dc984311Ab737ee56eFD';
-			await registerWithdrawal(ownerPublic, withdrawalAmount, nonceHash, witness, nvDaoToken, dd, withdrawalRecipient, blockHeaderOracle);
+			await registerWithdrawal(ownerPublic, withdrawalAmount, nonceHash, witness, nvDaoToken, dd, withdrawalRecipient, withdrawalRecipient, blockHeaderOracle);
 
 			// Get withdrawal tx
 			const withdrawalAddress = depositAddress;
@@ -364,7 +366,7 @@ describe('Nonvoting Token', () => {
 
 			// Second withdrawal
 			const {witness: witness2, nonceHash: nonceHash2} = await beginWithdrawal(ownerPublic, nvDaoToken, withdrawalAmount);
-			await registerWithdrawal(ownerPublic, withdrawalAmount, nonceHash2, witness2, nvDaoToken, dd, withdrawalRecipient, blockHeaderOracle);
+			await registerWithdrawal(ownerPublic, withdrawalAmount, nonceHash2, witness2, nvDaoToken, dd, withdrawalRecipient, withdrawalRecipient, blockHeaderOracle);
 
 			// Get a proof of inclusion
 			await blockHeaderOracle.setBlockHeaderHash(txReceipt.blockNumber, txReceipt.blockHash).then(async tx => tx.wait());
