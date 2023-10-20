@@ -115,4 +115,26 @@ describe('TransactionSerializer', () => {
 		const serializedSignedTx = await ts.serializeSignedTransaction(signedTx);
 		expect(serializedSignedTx).to.equal('0x02f86c018084773594008505d21dba008255f09401020304050607080910111213141516171819208081dec080a056c621b4ff1c59a99a2ae5cd7575e9f7f3de7fefdefb48f54c61d11b4d4ae61ba053ae4db88e3fec34fc0c24d7119a10173f5dde5170520960d7aeae48d42396f7');
 	});
+
+	it('Should serialize a signed type-2 transaction 2', async () => {
+		const {ts} = await deployTxSerializer();
+		const tx = {
+			chainId: 30_121,
+			nonce: 0,
+			maxPriorityFeePerGas: 1_000_000_000,
+			maxFeePerGas: 1_000_000_000_000,
+			gasLimit: 100_000,
+			destination: '0xeF47d3A70814be32817979CC9D7F00E4f9FfF0C8',
+			amount: 0,
+			payload: '0xa9059cbb000000000000000000000000c42a84d4f2f511f90563dc984311ab737ee56efd000000000000000000000000000000000000000000000002b5e3af16b1880000',
+		};
+		const signedTx = {
+			transaction: tx,
+			r: '0x140cc3e71a25c2ac096f1761654aa0db02e48a4bdb2d5035e89be8b1b7f54d07',
+			s: '0x6cb307c4351f9ce5b3403dd8a3141e7a0b47603dd7bf5ff03944666f32db4240',
+			v: 1,
+		};
+		const serializedSignedTx = await ts.serializeSignedTransaction(signedTx);
+		expect(serializedSignedTx).to.equal('0x02f8b38275a980843b9aca0085e8d4a51000830186a094ef47d3a70814be32817979cc9d7f00e4f9fff0c880b844a9059cbb000000000000000000000000c42a84d4f2f511f90563dc984311ab737ee56efd000000000000000000000000000000000000000000000002b5e3af16b1880000c001a0140cc3e71a25c2ac096f1761654aa0db02e48a4bdb2d5035e89be8b1b7f54d07a06cb307c4351f9ce5b3403dd8a3141e7a0b47603dd7bf5ff03944666f32db4240');
+	});
 });

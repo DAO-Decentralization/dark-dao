@@ -13,6 +13,7 @@
     "xo": "^0.56.0"
   },
   "dependencies": {
+    "@ethereumjs/trie": "^6.0.0",
     "@ethersproject/abstract-signer": "^5.7.0",
     "@nomicfoundation/hardhat-network-helpers": "^1.0.9",
     "@oasisprotocol/sapphire-paratime": "^1.1.1",

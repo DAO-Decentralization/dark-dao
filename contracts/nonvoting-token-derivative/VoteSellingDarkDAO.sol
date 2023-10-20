@@ -293,18 +293,19 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         );
     }
 
-    function showWithdrawalInclusion(
-        uint256 nonce,
+    function proveWithdrawalInclusion(
         address withdrawalRecipient,
         uint256 amountToWithdraw,
         Type2TxMessageSigned calldata signedTx,
         TransactionProof memory inclusionProof,
         uint256 proofBlockNumber
     ) public {
-        require(signedTx.transaction.nonce == nonce, "Wrong nonce");
-
         // Calculate signer address
-        bytes memory unsignedTxData = getWithdrawalTransaction(nonce, withdrawalRecipient, amountToWithdraw);
+        bytes memory unsignedTxData = getWithdrawalTransaction(
+            signedTx.transaction.nonce,
+            withdrawalRecipient,
+            amountToWithdraw
+        );
         bytes32 unsignedTxHash = keccak256(unsignedTxData);
         bytes memory signature = bytes.concat(bytes32(signedTx.r), bytes32(signedTx.s), bytes1(uint8(27 + signedTx.v)));
         (address signer, ECDSA.RecoverError error) = ECDSA.tryRecover(unsignedTxHash, signature);
@@ -313,7 +314,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         // Ensure that this is an up-to-date withdrawal transaction
         address withdrawalAccount = accounts[withdrawalAddressIndex];
         require(signer == withdrawalAccount, "Wrong signer/not the current withdrawal account");
-        require(nonce == accountNonces[withdrawalAccount], "Nonce has already been accounted for");
+        require(signedTx.transaction.nonce == accountNonces[withdrawalAccount], "Nonce has already been accounted for");
 
         // Prove inclusion
         require(
@@ -328,6 +329,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         withdrawalOwed[withdrawalRecipient] -= amountToWithdraw;
 
         // Find the next withdrawal address
+        accountNonces[withdrawalAccount]++;
         daoTokenBalance[withdrawalAccount] -= amountToWithdraw;
         if (daoTokenBalance[withdrawalAccount] == 0) {
             withdrawalAddressIndex++;

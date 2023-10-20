@@ -13,7 +13,6 @@ struct StorageProof {
 
 struct TransactionProof {
     bytes rlpBlockHeader;
-    bytes32 transactionHash;
     bytes transactionIndexRlp;
     bytes transactionProofStack;
 }
@@ -112,7 +111,7 @@ contract ProvethVerifier {
         bytes32 txRoot = bytes32(blockHeader[BLOCK_HEADER_TX_ROOT_INDEX].toUint());
 
         // The key in the trie is the index of the address in RLP
-        bytes memory txKey = txProof.transactionIndexRlp;
+        bytes memory txKey = decodeNibbles(txProof.transactionIndexRlp, 0);
         // We must convert the bytes of the keccak256 to nibbles for validateMPTProof
         bytes memory txRlp = validateMPTProof(
             txRoot,

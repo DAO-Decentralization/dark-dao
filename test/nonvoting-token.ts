@@ -1,5 +1,6 @@
 import {expect} from 'chai';
 import {ethers} from 'hardhat';
+import {Trie} from '@ethereumjs/trie';
 import {derToEthSignature} from '../scripts/ethereum-signatures';
 import {type PopulatedTypedData, getTypedDataParams} from '../scripts/eip712-builder';
 
@@ -50,6 +51,14 @@ function getSnapshotVoteTypedData(address: string, proposal: string): PopulatedT
 		},
 	};
 	return typedData;
+}
+
+function getRpcUint(number: any) {
+	return ethers.BigNumber.from(number).toHexString().replaceAll('0x0', '0x');
+}
+
+function getRlpUint(number: any) {
+	return number > 0 ? ethers.utils.RLP.encode(ethers.utils.arrayify(number)) : ethers.utils.RLP.encode('0x');
 }
 
 describe('PrivateKeyGenerator', () => {
@@ -132,7 +141,7 @@ describe('Nonvoting Token', () => {
 		await nvDaoToken.deployed();
 		expect(nvDaoToken.address).to.equal(nvDaoTokenPredictedAddress);
 
-		return {owner, ownerPublic, blockHeaderOracle, dd, daoToken, nvDaoToken};
+		return {owner, ownerPublic, blockHeaderOracle, dd, daoToken, nvDaoToken, transactionSerializer};
 	}
 
 	async function depositTokens({dd, owner, ownerPublic, blockHeaderOracle, daoToken, nvDaoToken}: {dd: any; owner: ethers.Signer; ownerPublic: ethers.Signer; blockHeaderOracle: any; daoToken: any; nvDaoToken: any}, depositAmount: bigint) {
@@ -146,7 +155,7 @@ describe('Nonvoting Token', () => {
 		await blockHeaderOracle.setBlockHeaderHash(proofBlock.number, proofBlock.hash);
 
 		const depositStorageSlot = getMappingStorageSlot(depositData.depositAddress, daoTokenBalanceMappingSlot);
-		const proofBlockNumberRpcString = ethers.BigNumber.from(proofBlock.number).toHexString().replaceAll('0x0', '0x');
+		const proofBlockNumberRpcString = getRpcUint(proofBlock.number);
 		const proof = await publicProvider.send('eth_getProof', [daoToken.address, [depositStorageSlot], proofBlockNumberRpcString]);
 		expect(ethers.BigNumber.from(proof.storageProof[0].value).eq(depositAmount)).to.be.true;
 
@@ -175,6 +184,71 @@ describe('Nonvoting Token', () => {
 		const nvDaoTokenBal = await nvDaoToken.balanceOf(nvDaoTokensRecipient);
 		expect(nvDaoTokenBal).to.equal(depositAmount);
 		return {depositAddress: depositData.depositAddress, nvDaoTokensRecipient};
+	}
+
+	async function beginWithdrawal(nvTokenHolder, nvDaoToken, withdrawalAmount) {
+		const witness = ethers.utils.randomBytes(32);
+		const nonceHash = ethers.utils.keccak256(witness);
+		await nvDaoToken.connect(nvTokenHolder).beginWithdrawal(withdrawalAmount, nonceHash).then(async tx => tx.wait());
+		return {witness, nonceHash};
+	}
+
+	async function registerWithdrawal(nvTokenHolder, withdrawalAmount, nonceHash, witness, nvDaoToken, dd, withdrawalRecipient, blockHeaderOracle = undefined) {
+		// Calculate the storage slot
+		const withdrawalHash = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['string', 'address', 'uint256', 'bytes32'], ['withdrawal', nvTokenHolder.address, withdrawalAmount, nonceHash]));
+		const withdrawalStorageSlot = getMappingStorageSlot(withdrawalHash, nvTokenWithdrawalsSlot);
+		// Get the withdrawal proof
+		const proofBlock = await publicProvider.getBlock('latest');
+		if (blockHeaderOracle) {
+			await blockHeaderOracle.setBlockHeaderHash(proofBlock.number, proofBlock.hash);
+		}
+
+		const proofBlockNumberRpcString = ethers.BigNumber.from(proofBlock.number).toHexString().replaceAll('0x0', '0x');
+		const proof = await publicProvider.send('eth_getProof', [nvDaoToken.address, [withdrawalStorageSlot], proofBlockNumberRpcString]);
+		expect(ethers.BigNumber.from(proof.storageProof[0].value).eq(withdrawalAmount)).to.be.true;
+
+		// Get the RLP-encoded block header for this block
+		const rawProofBlockHeader = await publicProvider.send('debug_getRawHeader', [proofBlockNumberRpcString]);
+		expect(ethers.utils.keccak256(rawProofBlockHeader)).to.equal(proofBlock.hash);
+
+		// Register the withdrawal with the proof
+		console.log('Registering withdrawal...');
+		const storageProof = {
+			rlpBlockHeader: rawProofBlockHeader,
+			addr: nvDaoToken.address,
+			storageSlot: withdrawalStorageSlot,
+			accountProofStack: ethers.utils.RLP.encode(proof.accountProof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
+			storageProofStack: ethers.utils.RLP.encode(proof.storageProof[0].proof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
+		};
+
+		await dd.registerWithdrawal(nvTokenHolder.address, withdrawalAmount, nonceHash, witness, withdrawalRecipient, proofBlock.number, storageProof).then(async tx => tx.wait());
+	}
+
+	async function getTxInclusionProof(blockNumber: number, txIndex: number) {
+		const rawBlock = await publicProvider.send('debug_getRawBlock', [getRpcUint(blockNumber)]);
+		const blockRLP = ethers.utils.RLP.decode(rawBlock);
+		const blockHeader: string[] = blockRLP[0];
+		const rawTransactions: string[] = blockRLP[1];
+		console.log(rawTransactions);
+
+		// Build Merkle tree
+		const trie = new Trie();
+		for (const [i, rawTransaction] of rawTransactions.entries()) {
+			await trie.put(getRlpUint(i), rawTransaction);
+		}
+
+		// Ensure the transaction root was constructed the same way
+		const txRoot = ethers.utils.hexlify(await trie.root());
+		expect(txRoot).to.equal(blockHeader[4]);
+		expect(txIndex).to.be.lessThan(rawTransactions.length);
+
+		// Generate the proof of the transaction
+		const txProof = await trie.createProof(getRlpUint(txIndex));
+		const txProofHex = txProof.map(x => ethers.utils.hexlify(x));
+		return {
+			rlpBlockHeader: ethers.utils.RLP.encode(blockHeader),
+			proof: txProofHex,
+		};
 	}
 
 	describe('Token deployment', () => {
@@ -237,41 +311,13 @@ describe('Nonvoting Token', () => {
 			const depositAmount = (10n ** 18n) * 100n;
 			const {nvDaoTokensRecipient, depositAddress} = await depositTokens({dd, owner, blockHeaderOracle, daoToken, nvDaoToken, ownerPublic}, depositAmount);
 
-			const witness = ethers.utils.randomBytes(32);
-			const nonceHash = ethers.utils.keccak256(witness);
 			const withdrawalAmount = depositAmount / 2n;
-			await nvDaoToken.beginWithdrawal(withdrawalAmount, nonceHash).then(async tx => tx.wait());
-
-			// Calculate the storage slot
-			const withdrawalHash = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['string', 'address', 'uint256', 'bytes32'], ['withdrawal', ownerPublic.address, withdrawalAmount, nonceHash]));
-			const withdrawalStorageSlot = getMappingStorageSlot(withdrawalHash, nvTokenWithdrawalsSlot);
-			// Get the withdrawal proof
-			const proofBlock = await publicProvider.getBlock('latest');
-			await blockHeaderOracle.setBlockHeaderHash(proofBlock.number, proofBlock.hash);
-			const proofBlockNumberRpcString = ethers.BigNumber.from(proofBlock.number).toHexString().replaceAll('0x0', '0x');
-			const proof = await publicProvider.send('eth_getProof', [nvDaoToken.address, [withdrawalStorageSlot], proofBlockNumberRpcString]);
-			expect(ethers.BigNumber.from(proof.storageProof[0].value).eq(withdrawalAmount)).to.be.true;
-
-			// Get the RLP-encoded block header for this block
-			const rawProofBlockHeader = await publicProvider.send('debug_getRawHeader', [proofBlockNumberRpcString]);
-			expect(ethers.utils.keccak256(rawProofBlockHeader)).to.equal(proofBlock.hash);
-
-			// Register the withdrawal with the proof
-			console.log('Registering withdrawal...');
-			const storageProof = {
-				rlpBlockHeader: rawProofBlockHeader,
-				addr: nvDaoToken.address,
-				storageSlot: withdrawalStorageSlot,
-				accountProofStack: ethers.utils.RLP.encode(proof.accountProof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
-				storageProofStack: ethers.utils.RLP.encode(proof.storageProof[0].proof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
-			};
-
+			const {witness, nonceHash} = await beginWithdrawal(ownerPublic, nvDaoToken, withdrawalAmount);
 			// Lol account
 			const withdrawalRecipient = '0xc42A84D4f2f511f90563dc984311Ab737ee56eFD';
-			await dd.registerWithdrawal(ownerPublic.address, withdrawalAmount, nonceHash, witness, withdrawalRecipient, proofBlock.number, storageProof).then(async tx => tx.wait());
+			await registerWithdrawal(ownerPublic, withdrawalAmount, nonceHash, witness, nvDaoToken, dd, withdrawalRecipient, blockHeaderOracle);
 
 			// Get withdrawal tx
-			// TODO: Expose function to learn this
 			const withdrawalAddress = depositAddress;
 			const withdrawalTx = await dd.getSignedWithdrawalTransaction(withdrawalRecipient);
 			const ethSig = derToEthSignature(withdrawalTx.signature, ethers.utils.keccak256(withdrawalTx.unsignedTx), withdrawalAddress, false);
@@ -284,6 +330,86 @@ describe('Nonvoting Token', () => {
 
 			const withdrawnBalance = await daoToken.balanceOf(withdrawalRecipient);
 			expect(withdrawnBalance.eq(withdrawalAmount)).to.be.true;
+		});
+
+		it('Should generate a transaction inclusion proof', async () => {
+			const blockNumber = 25_292;
+			const txHash = '0x68e2250edb99f3eb7e6477cfd4302d5d0b8a83b8550cc71040f77feca6474126';
+			const txIndex = 0;
+			console.log(await getTxInclusionProof(blockNumber, txIndex));
+		});
+
+		it('Should accept withdrawal inclusion proofs', async () => {
+			const {dd, owner, blockHeaderOracle, daoToken, nvDaoToken, ownerPublic, transactionSerializer} = await deployToken();
+			const depositAmount = (10n ** 18n) * 100n;
+			const {nvDaoTokensRecipient, depositAddress} = await depositTokens({dd, owner, blockHeaderOracle, daoToken, nvDaoToken, ownerPublic}, depositAmount);
+
+			const withdrawalAmount = depositAmount / 2n;
+			const {witness, nonceHash} = await beginWithdrawal(ownerPublic, nvDaoToken, withdrawalAmount);
+			// Lol account
+			const withdrawalRecipient = '0xc42A84D4f2f511f90563dc984311Ab737ee56eFD';
+			await registerWithdrawal(ownerPublic, withdrawalAmount, nonceHash, witness, nvDaoToken, dd, withdrawalRecipient, blockHeaderOracle);
+
+			// Get withdrawal tx
+			const withdrawalAddress = depositAddress;
+			const withdrawalTx = await dd.getSignedWithdrawalTransaction(withdrawalRecipient);
+			const ethSig = derToEthSignature(withdrawalTx.signature, ethers.utils.keccak256(withdrawalTx.unsignedTx), withdrawalAddress, false);
+			const signedWithdrawalTxRaw = ethers.utils.serializeTransaction(ethers.utils.parseTransaction(withdrawalTx.unsignedTx), ethSig);
+
+			// Fund the account
+			// TODO: Ensure these transactions can still be included despite max gas price not being fulfilled
+			await ownerPublic.sendTransaction({to: withdrawalAddress, value: ethers.utils.parseEther('0.1')}).then(async tx => tx.wait());
+			const txReceipt = await publicProvider.sendTransaction(signedWithdrawalTxRaw).then(async tx => tx.wait());
+			console.log(txReceipt);
+
+			// Second withdrawal
+			const {witness: witness2, nonceHash: nonceHash2} = await beginWithdrawal(ownerPublic, nvDaoToken, withdrawalAmount);
+			await registerWithdrawal(ownerPublic, withdrawalAmount, nonceHash2, witness2, nvDaoToken, dd, withdrawalRecipient, blockHeaderOracle);
+
+			// Get a proof of inclusion
+			await blockHeaderOracle.setBlockHeaderHash(txReceipt.blockNumber, txReceipt.blockHash).then(async tx => tx.wait());
+			const {proof, rlpBlockHeader} = await getTxInclusionProof(txReceipt.blockNumber, txReceipt.transactionIndex);
+			console.log('Transaction inclusion proof:', proof);
+
+			// Submit proof to Dark DAO!
+			// This can be gathered from the transaction data of the included transaction
+			const signedWithdrawalTx = ethers.utils.parseTransaction(signedWithdrawalTxRaw);
+			const signedTxFormatted = {
+				transaction: {
+					chainId: signedWithdrawalTx.chainId,
+					nonce: signedWithdrawalTx.nonce,
+					maxPriorityFeePerGas: signedWithdrawalTx.maxPriorityFeePerGas,
+					maxFeePerGas: signedWithdrawalTx.maxFeePerGas,
+					gasLimit: signedWithdrawalTx.gasLimit,
+					destination: signedWithdrawalTx.to,
+					amount: signedWithdrawalTx.value,
+					payload: signedWithdrawalTx.data,
+				},
+				r: signedWithdrawalTx.r,
+				s: signedWithdrawalTx.s,
+				v: signedWithdrawalTx.v,
+			};
+			console.log(signedTxFormatted, signedWithdrawalTxRaw, signedWithdrawalTx);
+			await dd.proveWithdrawalInclusion(
+				withdrawalRecipient,
+				withdrawalAmount,
+				signedTxFormatted,
+				{
+					rlpBlockHeader,
+					transactionIndexRlp: getRlpUint(txReceipt.transactionIndex),
+					transactionProofStack: ethers.utils.RLP.encode(proof.map(rlpList => ethers.utils.RLP.decode(rlpList))),
+				},
+				txReceipt.blockNumber,
+			).then(async tx => tx.wait());
+
+			console.log('Getting second signed withdrawal transaction...');
+			const newTx = await dd.getSignedWithdrawalTransaction(withdrawalRecipient);
+			const ethSig2 = derToEthSignature(newTx.signature, ethers.utils.keccak256(newTx.unsignedTx), withdrawalAddress, false);
+			const signedWithdrawalTxRaw2 = ethers.utils.serializeTransaction(ethers.utils.parseTransaction(newTx.unsignedTx), ethSig);
+			const signedWithdrawalTx2 = ethers.utils.parseTransaction(signedWithdrawalTxRaw2);
+			console.log(signedWithdrawalTx2);
+			expect(signedWithdrawalTx2.nonce).to.equal(1);
+			console.log('new tx', signedWithdrawalTx2);
 		});
 	});
 });
