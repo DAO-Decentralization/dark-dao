@@ -1,11 +1,12 @@
 # dark-dao
-An implementation of key-encumbered wallet and encumbrance policy contracts that can be used to create Dark DAOs.
+An implementation of key-encumbered wallet and encumbrance policy contracts that can be used to create Dark DAOs, organizations built for trustworthy vote-selling.
 
-### Current status
-We are still actively working on the implementation. There are a few things left to do:
-- [X] Encumbering access to signing voting-related messages while allowing transactions and other messages to be signed
-- [X] Signing voting transactions from within a Dark DAO encumbrance policy contract (see the [example](contracts/ExampleEncumbrancePolicy.sol))
-- [X] Dark DAO management (e.g. payments)
+In this repository, we show two different Dark DAO "flavors":
+* A Basic Dark DAO that demonstrates simple vote-buying between a briber and vote sellers. Vote sellers must store their DAO tokens whose voting power they wish to sell inside an encumbered account that is controlled by a key-encumbered wallet smart contract.
+* A user-friendly Tokenized Dark DAO "Lite" that automatically sells user voting power at auction. It is accessible to ordinary users via an ERC-20 DAO token derivative. Key encumbrance is managed entirely by the Dark DAO contract.
+
+## Details
+In order for trustworthy DAO vote-selling to be possible, the private key associated with the account that is doing the selling must be encumbered inside a trusted execution enclave (TEE) so that the vote-seller can rent the ability to sign DAO votes from his or her account solely to the vote-buyer. This way, the account holder cannot change or override the vote-buyer's votes. To that end, we use Oasis Sapphire as a backend to store key material and further hide vote-selling activities.
 
 ## Test locally
 Requirements:
