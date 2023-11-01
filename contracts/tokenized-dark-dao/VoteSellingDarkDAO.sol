@@ -35,11 +35,16 @@ struct SnapshotVote2 {
 contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
     // Trusted oracle for block hashes
     IBlockHashOracle private ethBlockHashOracle;
+    // Library for verifying transaction inclusion and state proofs
     ProvethVerifier public stateVerifier;
+    // Key that signs deposit authorization messages
     bytes private signingKey;
-    bytes32 private depositAddressGenKey;
-    bytes32 private depositIdRandomness;
+    // Public address of the key that signs authorization messages
     address public darkDaoSignerAddress;
+    // Key that decrypts deposit key material
+    bytes32 private depositAddressGenKey;
+    // Entropy for creating unique deposit IDs
+    bytes32 private depositIdRandomness;
 
     // Ethereum address where the Dark DAO token will be deployed
     // Calculate this in advance
