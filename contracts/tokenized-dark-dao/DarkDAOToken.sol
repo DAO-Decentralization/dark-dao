@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
-contract NonVotingDAOToken is ERC20, ERC20Permit {
+contract DarkDAOToken is ERC20, ERC20Permit {
     address public underlyingToken;
     address public darkDaoSigner;
     mapping(uint256 => uint256) mints;
@@ -16,7 +16,7 @@ contract NonVotingDAOToken is ERC20, ERC20Permit {
     constructor(
         address _underlyingToken,
         address _darkDaoSigner
-    ) ERC20("Non-Voting DAO Token", "NVT") ERC20Permit("Non-Voting DAO Token") {
+    ) ERC20("Dark DAO Token", "DDT") ERC20Permit("Dark DAO Token") {
         underlyingToken = _underlyingToken;
         darkDaoSigner = _darkDaoSigner;
     }

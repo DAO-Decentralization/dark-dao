@@ -7,7 +7,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
 
 import "./PrivateKeyGenerator.sol";
-import "./IBlockHeaderOracle.sol";
+import "./IBlockHashOracle.sol";
 import {StorageProof, ProvethVerifier, TransactionProof} from "./proveth/ProvethVerifier.sol";
 import {VoteAuction} from "./VoteAuction.sol";
 import {EIP712DomainParams, EIP712Utils} from "../EIP712Utils.sol";
@@ -33,16 +33,17 @@ struct SnapshotVote2 {
 }
 
 contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
-    IBlockHeaderOracle private ethBlockHeaderOracle;
+    // Trusted oracle for block hashes
+    IBlockHashOracle private ethBlockHashOracle;
     ProvethVerifier public stateVerifier;
     bytes private signingKey;
     bytes32 private depositAddressGenKey;
     bytes32 private depositIdRandomness;
     address public darkDaoSignerAddress;
 
-    // Ethereum address where the nonvoting DAO token will be deployed
+    // Ethereum address where the Dark DAO token will be deployed
     // Calculate this in advance
-    address public ethNvToken;
+    address public ethDdToken;
     // Ethereum address of the underlying DAO token
     address public ethDaoToken;
     // Network ID of the public EVM network (Ethereum)
@@ -52,45 +53,63 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
     // Minimum deposit amount
     uint256 public minDeposit;
     // Storage slot of the withdrawalAmounts mapping in the nonvoting token contract
-    uint256 public nvTokenWithdrawalsSlot;
+    uint256 public ddTokenWithdrawalsSlot;
+    // Deposit lockup, in seconds, after a deposit proof is given. After this
+    // period, the depositor can get authorization to mint the DD tokens.
+    uint256 public depositLockupDuration;
 
+    // A list of Ethereum addresses controlled by the Dark DAO
     address[] private accounts;
-    mapping(address => bool) deposited;
-    mapping(address => uint256) daoTokenBalance;
-    mapping(address => bytes) accountKeys;
-    mapping(address => uint256) accountNonces;
-    uint256 private totalDaoTokenBalance = 0;
-    uint256[] private depositBlockNumbers;
-    DepositReceipt[] private deposits;
+    // The index of the Dark DAO account that is currently used for withdrawals
     uint256 private withdrawalAddressIndex = 0;
+    // Known target-DAO token balance of Dark DAO controlled accounts
+    mapping(address => uint256) daoTokenBalance;
+    // Maps Dark DAO accounts to their private keys
+    mapping(address => bytes) accountKeys;
+    // Maps Dark DAO accounts to their current nonce
+    mapping(address => uint256) accountNonces;
+    // Total number of DAO tokens controlled by the Dark DAO (technically a lower bound)
+    uint256 private totalDaoTokenBalance = 0;
+    // Per-depositor timestamps of registered deposits
+    mapping(address => uint256[]) private depositTimestamps;
+    // Per-depositor deposit receipts
+    mapping(address => DepositReceipt[]) private deposits;
+
     // Total bribes paid out to users
     uint256 private totalBribePayoutAmount = 0;
     // Total amount of the native token (ROSE) contributed in deposits
     uint256 private totalNativeDepositAmount = 0;
 
+    // Records whether a particular DD token burn has been counted
     mapping(bytes32 => uint256) withdrawalState;
+    // Maps target-DAO token recipients to the amount owed
     mapping(address => uint256) withdrawalOwed;
+    // Maps target-DAO token recipients to the timestamp after which they can
+    // sign withdrawal transactions
+    mapping(address => uint256) withdrawalEnabled;
 
     constructor(
-        IBlockHeaderOracle _ethBlockHeaderOracle,
+        IBlockHashOracle _ethBlockHashOracle,
         ProvethVerifier _stateVerifier,
         uint256 _ethChainId,
-        address _ethNvToken,
+        address _ethDdToken,
         address _ethDaoToken,
         uint256 _daoTokenBalanceSlot,
-        uint256 _nvTokenWithdrawalsSlot,
+        uint256 _ddTokenWithdrawalsSlot,
         uint256 _minDeposit,
         uint256 minimumBid,
-        uint256 auctionDuration
+        uint256 auctionDuration,
+        uint256 _depositLockupDuration
     ) VoteAuction(minimumBid, auctionDuration) {
-        ethBlockHeaderOracle = _ethBlockHeaderOracle;
+        ethBlockHashOracle = _ethBlockHashOracle;
         stateVerifier = _stateVerifier;
         ethChainId = _ethChainId;
-        ethNvToken = _ethNvToken;
+        ethDdToken = _ethDdToken;
         ethDaoToken = _ethDaoToken;
         daoTokenBalanceSlot = _daoTokenBalanceSlot;
-        nvTokenWithdrawalsSlot = _nvTokenWithdrawalsSlot;
+        ddTokenWithdrawalsSlot = _ddTokenWithdrawalsSlot;
         minDeposit = _minDeposit;
+        depositLockupDuration = _depositLockupDuration;
         (signingKey, darkDaoSignerAddress) = generatePrivateKey("signer");
         depositAddressGenKey = bytes32(Sapphire.randomBytes(32, "depositAddressGenKey"));
         depositIdRandomness = bytes32(Sapphire.randomBytes(32, "depositIdRandomness"));
@@ -140,7 +159,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
             encryptedAddressInfo,
             "deposit"
         );
-        (bytes memory accountKey, address depositAddress, address nvTokenRecipient) = abi.decode(
+        (bytes memory accountKey, address depositAddress, address ddTokenRecipient) = abi.decode(
             addressInfo,
             (bytes, address, address)
         );
@@ -149,14 +168,13 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         uint256 storageSlot = uint256(keccak256(abi.encode(depositAddress, daoTokenBalanceSlot)));
         require(storageProof.storageSlot == storageSlot, "Proof must be for balanceOf(depositAddress) storage slot");
         require(
-            keccak256(storageProof.rlpBlockHeader) == ethBlockHeaderOracle.getBlockHeaderHash(proofBlockNumber),
+            keccak256(storageProof.rlpBlockHeader) == ethBlockHashOracle.getBlockHash(proofBlockNumber),
             "Block hash incorrect or not found in oracle"
         );
         // Prove
         uint256 depositedAmount = stateVerifier.validateStorageProof(storageProof);
-        require(depositedAmount > minDeposit, "Minimum deposit not reached");
-        require(!deposited[depositAddress], "Deposit already used");
-        deposited[depositAddress] = true;
+        require(depositedAmount >= minDeposit, "Minimum deposit not reached");
+        require(daoTokenBalance[depositAddress] == 0, "Deposit already used");
         daoTokenBalance[depositAddress] = depositedAmount;
         accountKeys[depositAddress] = accountKey;
         accounts.push(depositAddress);
@@ -171,9 +189,9 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         totalNativeDepositAmount += msg.value;
 
         bytes32 depositId = keccak256(
-            bytes.concat(bytes("deposit"), bytes20(nvTokenRecipient), bytes20(depositAddress), depositIdRandomness)
+            bytes.concat(bytes("deposit"), bytes20(ddTokenRecipient), bytes20(depositAddress), depositIdRandomness)
         );
-        bytes32 messageHash = keccak256(abi.encode("deposit", nvTokenRecipient, depositedAmount, depositId));
+        bytes32 messageHash = keccak256(abi.encode("deposit", ddTokenRecipient, depositedAmount, depositId));
         bytes memory signature = Sapphire.sign(
             Sapphire.SigningAlg.Secp256k1PrehashedKeccak256,
             signingKey,
@@ -181,24 +199,24 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
             ""
         );
         totalDaoTokenBalance += depositedAmount;
-        deposits.push(
+        deposits[msg.sender].push(
             DepositReceipt({
-                recipient: nvTokenRecipient,
+                recipient: ddTokenRecipient,
                 amount: depositedAmount,
                 depositId: depositId,
                 signature: signature
             })
         );
-        depositBlockNumbers.push(block.number);
+        depositTimestamps[msg.sender].push(block.timestamp);
     }
 
     function getDeposit(uint256 index) public view returns (DepositReceipt memory) {
         // Assumes execution and simulations only can happen on top of the latest Sapphire block
         require(
-            block.number > depositBlockNumbers[index],
-            "Wait until the next block for the deposit receipt to be accepted"
+            block.timestamp > depositTimestamps[msg.sender][index] + depositLockupDuration,
+            "Deposit is still locked"
         );
-        return deposits[index];
+        return deposits[msg.sender][index];
     }
 
     function _typedDataAllowed(
@@ -270,27 +288,28 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
 
         // Calculate withdrawalAmounts storage slot
         bytes32 storageKey = keccak256(abi.encode("withdrawal", burnSender, amount, nonceHash));
-        uint256 storageSlot = uint256(keccak256(abi.encode(storageKey, nvTokenWithdrawalsSlot)));
-        require(storageProof.addr == ethNvToken, "Proof must be for the nonvoting DAO derivative token");
+        uint256 storageSlot = uint256(keccak256(abi.encode(storageKey, ddTokenWithdrawalsSlot)));
+        require(storageProof.addr == ethDdToken, "Proof must be for the nonvoting DAO derivative token");
         require(
             storageProof.storageSlot == storageSlot,
             "Proof must be for withdrawalAmounts(depositAddress) storage slot"
         );
         require(
-            keccak256(storageProof.rlpBlockHeader) == ethBlockHeaderOracle.getBlockHeaderHash(proofBlockNumber),
+            keccak256(storageProof.rlpBlockHeader) == ethBlockHashOracle.getBlockHash(proofBlockNumber),
             "Block hash incorrect or not found in oracle"
         );
         uint256 burnedAmount = stateVerifier.validateStorageProof(storageProof);
         require(amount == burnedAmount, "State proof shows withdrawal never happened");
 
         require(withdrawalState[storageKey] == 0, "Withdrawal already registered");
-        withdrawalState[storageKey] = 1;
+        withdrawalState[storageKey] = block.timestamp;
 
         // Try sending the amount owed; otherwise, it's forfeited
         uint256 bribeOwed = (getNativeTokenBalance() * amount) / totalDaoTokenBalance;
         bribesWithdrawalRecipient.transfer(bribeOwed);
 
         withdrawalOwed[withdrawalRecipient] += amount;
+        withdrawalEnabled[withdrawalRecipient] = block.timestamp;
         totalBribePayoutAmount += bribeOwed;
 
         // Account for withdrawal
@@ -327,6 +346,10 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         uint256 nonce = accountNonces[withdrawalAccount];
         uint256 amountToWithdraw = Math.min(withdrawalOwed[withdrawalRecipient], daoTokenBalance[withdrawalAccount]);
         require(amountToWithdraw > 0, "A withdrawal is not due to this account");
+        require(
+            block.timestamp > withdrawalEnabled[withdrawalRecipient],
+            "Withdrawal registration must be finalized in a block"
+        );
         unsignedTx = getWithdrawalTransaction(nonce, withdrawalRecipient, amountToWithdraw);
         bytes32 unsignedTxHash = keccak256(unsignedTx);
         signature = Sapphire.sign(
@@ -362,7 +385,7 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
 
         // Prove inclusion
         require(
-            keccak256(inclusionProof.rlpBlockHeader) == ethBlockHeaderOracle.getBlockHeaderHash(proofBlockNumber),
+            keccak256(inclusionProof.rlpBlockHeader) == ethBlockHashOracle.getBlockHash(proofBlockNumber),
             "Block hash incorrect or not found in oracle"
         );
         bytes memory includedTx = stateVerifier.validateTxProof(inclusionProof);

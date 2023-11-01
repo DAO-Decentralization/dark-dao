@@ -1,6 +1,7 @@
 import {expect} from 'chai';
 import {ethers} from 'hardhat';
 import {Trie} from '@ethereumjs/trie';
+import {type TransactionResponse} from '@ethersproject/abstract-provider';
 import {derToEthSignature} from '../scripts/ethereum-signatures';
 import {type PopulatedTypedData, getTypedDataParams} from '../scripts/eip712-builder';
 
@@ -13,8 +14,17 @@ const ethTestChainId = 30_121;
 const publicProvider = new ethers.providers.JsonRpcProvider('http://localhost:23545');
 // The storage slot of the balances mapping in our TestERC20 token is 0
 const daoTokenBalanceMappingSlot = '0x00';
-// The withdrawals slot in the nonvoting token contract is 12
-const nvTokenWithdrawalsSlot = 12;
+// The withdrawals slot in the DD token contract is 12
+const ddTokenWithdrawalsSlot = 12;
+
+// If true, prints the gas usage of operations and Dark DAO contract bytecode size
+const verboseContractExecution = true;
+
+function showTransactionResult(title: string, transactionReceipt: TransactionResponse) {
+	if (verboseContractExecution) {
+		console.log(title, 'gas usage:', transactionReceipt.gasUsed.toString());
+	}
+}
 
 function getMappingStorageSlot(mappingKey: string, mappingSlot: string): string {
 	return ethers.utils.keccak256(ethers.utils.hexConcat([ethers.utils.hexZeroPad(mappingKey, 32), ethers.utils.hexZeroPad(mappingSlot, 32)]));
@@ -84,11 +94,16 @@ describe('PrivateKeyGenerator', () => {
 	});
 });
 
-describe('Nonvoting Token', () => {
-	async function deployToken() {
+describe('Dark DAO Token', () => {
+	async function getAccounts() {
 		// Contracts are deployed using the first signer/account by default
 		const owner = await ethers.getSigner();
 		const ownerPublic = (new ethers.Wallet('0x519028d411cec86054c9c35903928eed740063336594f1b3b076fce119238f6a')).connect(publicProvider);
+		return {owner, ownerPublic};
+	}
+
+	async function deployToken() {
+		const {owner, ownerPublic} = await getAccounts();
 
 		// On Ethereum
 		const daoTokenFactory = await ethers.getContractFactory('TestERC20Token', ownerPublic);
@@ -96,7 +111,7 @@ describe('Nonvoting Token', () => {
 		await daoToken.deployed();
 
 		// On Oasis
-		const blockHeaderOracleFactory = await ethers.getContractFactory('TrivialBlockHeaderOracle');
+		const blockHeaderOracleFactory = await ethers.getContractFactory('TrivialBlockHashOracle');
 		const blockHeaderOracle = await blockHeaderOracleFactory.deploy();
 		await blockHeaderOracle.deployed();
 		const stateVerifierFactory = await ethers.getContractFactory('ProvethVerifier');
@@ -110,7 +125,7 @@ describe('Nonvoting Token', () => {
 		await eip712Utils.deployed();
 
 		// On Oasis
-		// Calculate the address of the nonvoting DAO token
+		// Calculate the address of the DD token
 		const nvDaoTokenPredictedAddress = ethers.utils.getContractAddress({
 			from: owner.address,
 			nonce: await publicProvider.getTransactionCount(owner.address) + (oasisTestChainId === ethTestChainId ? 1 : 0),
@@ -125,21 +140,36 @@ describe('Nonvoting Token', () => {
 		// 1 ROSE
 		const minimumBid = (10n ** 18n) * 1n;
 
-		// An auction for a proposal must begin earlier than this amount of time for the votes to be usable
-		// For testing, we use a very short time
+		// An auction for a proposal must begin earlier than this amount of time before the proposal ends
+		// for the votes to be usable.
+		// During testing, we use a very short time of 1 minute.
 		const auctionDuration = 60;
+
+		// Lockup period before DD token minting is allowed
+		const depositLockupDuration = 0;
 
 		const dd = await darkDaoFactory.deploy(
 			blockHeaderOracle.address, stateVerifier.address, ethTestChainId, nvDaoTokenPredictedAddress, daoToken.address,
-			daoTokenBalanceMappingSlot, nvTokenWithdrawalsSlot, ethers.BigNumber.from((10n ** 18n) * 8n),
-			minimumBid, auctionDuration);
+			daoTokenBalanceMappingSlot, ddTokenWithdrawalsSlot, ethers.BigNumber.from((10n ** 18n) * 8n),
+			minimumBid, auctionDuration, depositLockupDuration);
 		await dd.deployed();
+		console.log('Dark DAO contract bytecode size:', ethers.utils.hexDataLength(darkDaoFactory.bytecode));
 
 		// On Ethereum
-		const nvDaoTokenFactory = await ethers.getContractFactory('NonVotingDAOToken', ownerPublic);
+		const nvDaoTokenFactory = await ethers.getContractFactory('DarkDAOToken', ownerPublic);
 		const nvDaoToken = await nvDaoTokenFactory.deploy(daoToken.address, await dd.darkDaoSignerAddress());
 		await nvDaoToken.deployed();
 		expect(nvDaoToken.address).to.equal(nvDaoTokenPredictedAddress);
+
+		await Promise.all([['State verifier', stateVerifier], ['Transaction serializer', transactionSerializer], ['EIP-712 Utils', eip712Utils], ['Dark DAO contract', dd], ['DD Token', nvDaoToken]].map(async (x: [string, any]) => {
+			const [name, c] = x;
+			if (!c.deployTransaction) {
+				return null;
+			}
+
+			const txReceipt = await c.deployTransaction.wait();
+			showTransactionResult(name + ' deployment', txReceipt);
+		}));
 
 		return {owner, ownerPublic, blockHeaderOracle, dd, daoToken, nvDaoToken, transactionSerializer};
 	}
@@ -150,9 +180,9 @@ describe('Nonvoting Token', () => {
 		console.log('Deposit address:', depositData.depositAddress);
 
 		// Transfer nvDAO tokens to deposit address
-		await daoToken.connect(ownerPublic).transfer(depositData.depositAddress, depositAmount).then(async t => t.wait());
+		showTransactionResult('Transfer DD tokens to deposit address', await daoToken.connect(ownerPublic).transfer(depositData.depositAddress, depositAmount).then(async t => t.wait()));
 		const proofBlock = await publicProvider.getBlock('latest');
-		await blockHeaderOracle.setBlockHeaderHash(proofBlock.number, proofBlock.hash);
+		await blockHeaderOracle.setBlockHash(proofBlock.number, proofBlock.hash);
 
 		const depositStorageSlot = getMappingStorageSlot(depositData.depositAddress, daoTokenBalanceMappingSlot);
 		const proofBlockNumberRpcString = getRpcUint(proofBlock.number);
@@ -172,7 +202,7 @@ describe('Nonvoting Token', () => {
 			accountProofStack: ethers.utils.RLP.encode(proof.accountProof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
 			storageProofStack: ethers.utils.RLP.encode(proof.storageProof[0].proof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
 		};
-		await dd.registerDeposit(depositData.wrappedAddressInfo, proofBlock.number, storageProof).then(async t => t.wait());
+		showTransactionResult('Register deposit', await dd.registerDeposit(depositData.wrappedAddressInfo, proofBlock.number, storageProof).then(async t => t.wait()));
 		const depositReceipt = await dd.getDeposit(0);
 		console.log('Deposit receipt:', depositReceipt);
 
@@ -180,27 +210,27 @@ describe('Nonvoting Token', () => {
 		console.log(depositReceipt.signature);
 		const depositMessage = ethers.utils.defaultAbiCoder.encode(['string', 'address', 'uint256', 'bytes32'], ['deposit', nvDaoTokensRecipient, depositAmount, depositReceipt.depositId]);
 		const depositSignature = derToEthSignature(depositReceipt.signature, ethers.utils.keccak256(depositMessage), await dd.darkDaoSignerAddress(), false);
-		await nvDaoToken.finalizeDeposit(nvDaoTokensRecipient, depositAmount, depositReceipt.depositId, depositSignature).then(async tx => tx.wait());
+		showTransactionResult('Mint DD tokens', await nvDaoToken.finalizeDeposit(nvDaoTokensRecipient, depositAmount, depositReceipt.depositId, depositSignature).then(async tx => tx.wait()));
 		const nvDaoTokenBal = await nvDaoToken.balanceOf(nvDaoTokensRecipient);
 		expect(nvDaoTokenBal).to.equal(depositAmount);
 		return {depositAddress: depositData.depositAddress, nvDaoTokensRecipient};
 	}
 
-	async function beginWithdrawal(nvTokenHolder, nvDaoToken, withdrawalAmount) {
+	async function beginWithdrawal(ddTokenHolder, nvDaoToken, withdrawalAmount) {
 		const witness = ethers.utils.randomBytes(32);
 		const nonceHash = ethers.utils.keccak256(witness);
-		await nvDaoToken.connect(nvTokenHolder).beginWithdrawal(withdrawalAmount, nonceHash).then(async tx => tx.wait());
+		showTransactionResult('Begin withdrawal to DD contract', await nvDaoToken.connect(ddTokenHolder).beginWithdrawal(withdrawalAmount, nonceHash).then(async tx => tx.wait()));
 		return {witness, nonceHash};
 	}
 
-	async function registerWithdrawal(nvTokenHolder, withdrawalAmount, nonceHash, witness, nvDaoToken, dd, withdrawalRecipient, bribesRecipient, blockHeaderOracle = undefined) {
+	async function registerWithdrawal(ddTokenHolder, withdrawalAmount, nonceHash, witness, nvDaoToken, dd, withdrawalRecipient, bribesRecipient, blockHeaderOracle = undefined) {
 		// Calculate the storage slot
-		const withdrawalHash = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['string', 'address', 'uint256', 'bytes32'], ['withdrawal', nvTokenHolder.address, withdrawalAmount, nonceHash]));
-		const withdrawalStorageSlot = getMappingStorageSlot(withdrawalHash, nvTokenWithdrawalsSlot);
+		const withdrawalHash = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['string', 'address', 'uint256', 'bytes32'], ['withdrawal', ddTokenHolder.address, withdrawalAmount, nonceHash]));
+		const withdrawalStorageSlot = getMappingStorageSlot(withdrawalHash, ddTokenWithdrawalsSlot);
 		// Get the withdrawal proof
 		const proofBlock = await publicProvider.getBlock('latest');
 		if (blockHeaderOracle) {
-			await blockHeaderOracle.setBlockHeaderHash(proofBlock.number, proofBlock.hash);
+			await blockHeaderOracle.setBlockHash(proofBlock.number, proofBlock.hash);
 		}
 
 		const proofBlockNumberRpcString = ethers.BigNumber.from(proofBlock.number).toHexString().replaceAll('0x0', '0x');
@@ -221,7 +251,7 @@ describe('Nonvoting Token', () => {
 			storageProofStack: ethers.utils.RLP.encode(proof.storageProof[0].proof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
 		};
 
-		await dd.registerWithdrawal(nvTokenHolder.address, withdrawalAmount, nonceHash, witness, withdrawalRecipient, bribesRecipient, proofBlock.number, storageProof).then(async tx => tx.wait());
+		showTransactionResult('Register withdrawal', await dd.registerWithdrawal(ddTokenHolder.address, withdrawalAmount, nonceHash, witness, withdrawalRecipient, bribesRecipient, proofBlock.number, storageProof).then(async tx => tx.wait()));
 	}
 
 	async function getTxInclusionProof(blockNumber: number, txIndex: number) {
@@ -280,8 +310,8 @@ describe('Nonvoting Token', () => {
 			const {depositAddress} = await depositTokens({dd, owner, blockHeaderOracle, daoToken, nvDaoToken, ownerPublic}, depositAmount);
 
 			const proposalHash = '0x0df596950bfc99035520c0de4d1aae5c1bb0bc626605e5d0b744ff1d90e3a981';
-			await dd.createAuction(proposalHash, {value: ethers.utils.parseEther('1')}).then(async tx => tx.wait());
-			await dd.bid(proposalHash, ethers.utils.parseEther('1.1'), {value: ethers.utils.parseEther('0.1')}).then(async tx => tx.wait());
+			showTransactionResult('Create auction', await dd.createAuction(proposalHash, {value: ethers.utils.parseEther('1')}).then(async tx => tx.wait()));
+			showTransactionResult('Bid on auction', await dd.bid(proposalHash, ethers.utils.parseEther('1.1'), {value: ethers.utils.parseEther('0.1')}).then(async tx => tx.wait()));
 			await expect(dd.getMaxBid(proposalHash)).to.eventually.equal(ethers.utils.parseEther('1.1'));
 		});
 		it('Should allow auction winner to sign votes', async () => {
@@ -335,10 +365,9 @@ describe('Nonvoting Token', () => {
 		});
 
 		it('Should generate a transaction inclusion proof', async () => {
-			const blockNumber = 25_292;
-			const txHash = '0x68e2250edb99f3eb7e6477cfd4302d5d0b8a83b8550cc71040f77feca6474126';
-			const txIndex = 0;
-			console.log(await getTxInclusionProof(blockNumber, txIndex));
+			const {ownerPublic} = await getAccounts();
+			const txReceipt = await ownerPublic.sendTransaction({to: ownerPublic.address}).then(async tx => tx.wait());
+			console.log(await getTxInclusionProof(txReceipt.blockNumber, txReceipt.transactionIndex));
 		});
 
 		it('Should accept withdrawal inclusion proofs', async () => {
@@ -360,16 +389,16 @@ describe('Nonvoting Token', () => {
 
 			// Fund the account
 			// TODO: Ensure these transactions can still be included despite max gas price not being fulfilled
-			await ownerPublic.sendTransaction({to: withdrawalAddress, value: ethers.utils.parseEther('0.1')}).then(async tx => tx.wait());
+			showTransactionResult('Fund DAO token withdrawal', await ownerPublic.sendTransaction({to: withdrawalAddress, value: ethers.utils.parseEther('0.1')}).then(async tx => tx.wait()));
 			const txReceipt = await publicProvider.sendTransaction(signedWithdrawalTxRaw).then(async tx => tx.wait());
-			console.log(txReceipt);
+			showTransactionResult('DAO token transfer (estimate)', txReceipt);
 
 			// Second withdrawal
 			const {witness: witness2, nonceHash: nonceHash2} = await beginWithdrawal(ownerPublic, nvDaoToken, withdrawalAmount);
 			await registerWithdrawal(ownerPublic, withdrawalAmount, nonceHash2, witness2, nvDaoToken, dd, withdrawalRecipient, withdrawalRecipient, blockHeaderOracle);
 
 			// Get a proof of inclusion
-			await blockHeaderOracle.setBlockHeaderHash(txReceipt.blockNumber, txReceipt.blockHash).then(async tx => tx.wait());
+			await blockHeaderOracle.setBlockHash(txReceipt.blockNumber, txReceipt.blockHash).then(async tx => tx.wait());
 			const {proof, rlpBlockHeader} = await getTxInclusionProof(txReceipt.blockNumber, txReceipt.transactionIndex);
 			console.log('Transaction inclusion proof:', proof);
 
@@ -392,7 +421,7 @@ describe('Nonvoting Token', () => {
 				v: signedWithdrawalTx.v,
 			};
 			console.log(signedTxFormatted, signedWithdrawalTxRaw, signedWithdrawalTx);
-			await dd.proveWithdrawalInclusion(
+			showTransactionResult('Prove withdrawal inclusion', await dd.proveWithdrawalInclusion(
 				withdrawalRecipient,
 				withdrawalAmount,
 				signedTxFormatted,
@@ -402,16 +431,14 @@ describe('Nonvoting Token', () => {
 					transactionProofStack: ethers.utils.RLP.encode(proof.map(rlpList => ethers.utils.RLP.decode(rlpList))),
 				},
 				txReceipt.blockNumber,
-			).then(async tx => tx.wait());
+			).then(async tx => tx.wait()));
 
 			console.log('Getting second signed withdrawal transaction...');
 			const newTx = await dd.getSignedWithdrawalTransaction(withdrawalRecipient);
 			const ethSig2 = derToEthSignature(newTx.signature, ethers.utils.keccak256(newTx.unsignedTx), withdrawalAddress, false);
 			const signedWithdrawalTxRaw2 = ethers.utils.serializeTransaction(ethers.utils.parseTransaction(newTx.unsignedTx), ethSig);
 			const signedWithdrawalTx2 = ethers.utils.parseTransaction(signedWithdrawalTxRaw2);
-			console.log(signedWithdrawalTx2);
 			expect(signedWithdrawalTx2.nonce).to.equal(1);
-			console.log('new tx', signedWithdrawalTx2);
 		});
 	});
 });
