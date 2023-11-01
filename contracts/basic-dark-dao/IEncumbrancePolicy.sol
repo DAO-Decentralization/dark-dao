@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.0 <0.9.0;
 
-import {EIP712DomainParams} from "./EIP712Utils.sol";
+import {EIP712DomainParams} from "../parsing/EIP712Utils.sol";
 
 interface IEncumbrancePolicy {
     // The policy is contacted when the caller enrolls for some period of time

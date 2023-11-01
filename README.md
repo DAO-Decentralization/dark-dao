@@ -35,7 +35,7 @@ the underlying target-DAO token plus bribe money which the Dark DAO accumulates
 from selling votes. The Dark DAO contract manages all key-encumbered wallets
 for users and runs its own auction for every DAO proposal, allowing anyone to
 bid to purchase the Dark DAO's votes. The Dark DAO itself still runs on
-Oasis, but ordinary users could just buy the DD token on ordinary token
+Oasis, but users could just buy the DD token on ordinary Ethereum token
 markets and leave to arbitrageurs the task of converting the tokens and
 interacting with Oasis.
 

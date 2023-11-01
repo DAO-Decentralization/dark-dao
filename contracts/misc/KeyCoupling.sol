@@ -4,8 +4,8 @@ pragma solidity >=0.8.0 <0.9.0;
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
 
-import "./elliptic-curve/EllipticCurve.sol";
-import "./Secp256k1.sol";
+import "../elliptic-curve/EllipticCurve.sol";
+import "../elliptic-curve/Secp256k1.sol";
 import "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
 
 contract KeyCoupling {

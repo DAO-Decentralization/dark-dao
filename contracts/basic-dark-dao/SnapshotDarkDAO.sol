@@ -3,7 +3,7 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import {ISnapshotEncumbrancePolicy} from "./SnapshotEncumbrancePolicy.sol";
-import {EIP712DomainParams} from "./EIP712Utils.sol";
+import {EIP712DomainParams} from "../parsing/EIP712Utils.sol";
 
 contract SnapshotDarkDAO {
     mapping(address => uint256) private registeredBribes;
@@ -22,8 +22,6 @@ contract SnapshotDarkDAO {
     bytes32 public bribeMerkleRoot;
     bytes32 public proposalHash;
 
-    // Note that in a real Dark DAO, the briber will want functions for
-    // withdrawing any extra funds that were not used in bribes
     constructor(
         ISnapshotEncumbrancePolicy _snapshotEncPolicy,
         bytes32 _proposalHash,

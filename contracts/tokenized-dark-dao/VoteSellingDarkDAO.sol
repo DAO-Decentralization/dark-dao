@@ -10,7 +10,7 @@ import "./PrivateKeyGenerator.sol";
 import "./IBlockHashOracle.sol";
 import {StorageProof, ProvethVerifier, TransactionProof} from "./proveth/ProvethVerifier.sol";
 import {VoteAuction} from "./VoteAuction.sol";
-import {EIP712DomainParams, EIP712Utils} from "../EIP712Utils.sol";
+import {EIP712DomainParams, EIP712Utils} from "../parsing/EIP712Utils.sol";
 import {TransactionSerializer} from "../parsing/TransactionSerializer.sol";
 import {Type2TxMessage, Type2TxMessageSigned} from "../parsing/EthereumTransaction.sol";
 

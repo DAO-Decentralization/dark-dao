@@ -3,13 +3,13 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
 
-import "./elliptic-curve/EllipticCurve.sol";
-import "./Secp256k1.sol";
+import "../elliptic-curve/EllipticCurve.sol";
+import "../elliptic-curve/Secp256k1.sol";
 
 import "./IEncumbrancePolicy.sol";
 import "./IEncumberedWallet.sol";
 
-import {EIP712DomainParams, EIP712Utils} from "./EIP712Utils.sol";
+import {EIP712DomainParams, EIP712Utils} from "../parsing/EIP712Utils.sol";
 
 struct EncumberedAccount {
     address owner;
