@@ -29,18 +29,15 @@ the bribe and sell their votes.
 
 We aren't sure how many people would go through the effort of managing their
 Ethereum account on a smart contract on another chain just to sell their DAO
-votes. That's why we've also designed the **Tokenized Dark DAO "Lite"**. Rather
-than having users create key-encumbered wallets, the Dark DAO contract manages
-all of that for them. Also, rather than having users scout out new bribes to
-accept, the Dark DAO contract runs its own auction for every DAO proposal, and
-anyone can bid to purchase the Dark DAO's votes. Ordinary users can simply
-purchase and hold an ERC-20 DAO token derivative (a Dark DAO token) that is
-redeemable for the underlying DAO token plus bribe money which the Dark DAO
-accumulates. While anyone can convert Dark DAO tokens to and from the underlying
-target-DAO tokens, we expect arbitrageurs to do this work for ordinary users.
-Users who otherwise wouldn't vote in the target DAO or who are apathetic about
-voting outcomes would choose to purchase Dark DAO tokens rather than target-DAO
-tokens.
+votes. The **Tokenized Dark DAO "Lite"** allows users to purchase and hold an
+ERC-20 DAO token derivative (a *DD token*) on Ethereum that is redeemable for
+the underlying target-DAO token plus bribe money which the Dark DAO accumulates
+from selling votes. The Dark DAO contract manages all key-encumbered wallets
+for users and runs its own auction for every DAO proposal, allowing anyone to
+bid to purchase the Dark DAO's votes. The Dark DAO itself still runs on
+Oasis, but ordinary users could just buy the DD token on ordinary token
+markets and leave to arbitrageurs the task of converting the tokens and
+interacting with Oasis.
 
 ## Run test cases locally
 Requirements:
