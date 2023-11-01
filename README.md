@@ -39,6 +39,8 @@ Oasis, but ordinary users could just buy the DD token on ordinary token
 markets and leave to arbitrageurs the task of converting the tokens and
 interacting with Oasis.
 
+<img src="img/dd-token.svg" width="256" height="256">
+
 ## Run test cases locally
 Requirements:
 * Docker
