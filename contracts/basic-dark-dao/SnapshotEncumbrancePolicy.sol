@@ -41,6 +41,7 @@ contract SnapshotEncumbrancePolicy is IEncumbrancePolicy, EIP712 {
     mapping(address => uint256) private enrollmentTimestamp;
     mapping(address => uint256) private encumbranceExpiration;
     mapping(address => mapping(bytes32 => address)) private allowedVoteSigner;
+    mapping(address => mapping(bytes32 => uint256)) private voteSignerTimestamp;
 
     constructor(IEncumberedWallet encumberedWallet) EIP712("SnapshotEncumbrancePolicy", "0.0.1") {
         walletContract = encumberedWallet;
@@ -100,6 +101,7 @@ contract SnapshotEncumbrancePolicy is IEncumbrancePolicy, EIP712 {
         require(signer != address(0), "Zero address");
         require(allowedVoteSigner[account][proposal] == address(0), "Vote signer already set");
         allowedVoteSigner[account][proposal] = signer;
+        voteSignerTimestamp[account][proposal] = block.timestamp;
     }
 
     function messageAllowed(address, bytes calldata) public pure returns (bool) {
@@ -124,7 +126,8 @@ contract SnapshotEncumbrancePolicy is IEncumbrancePolicy, EIP712 {
                 require(data.length == 256, "Incorrect vote data length");
                 SnapshotVote2 memory vote = abi.decode(data, (SnapshotVote2));
                 address voteSigner = allowedVoteSigner[addr][vote.proposal];
-                return voteSigner == accountOwner[addr];
+                uint256 voteTimestamp = voteSignerTimestamp[addr][vote.proposal];
+                return (voteSigner == accountOwner[addr] && block.timestamp > voteTimestamp);
             }
             // Unrecognized vote type
             return false;

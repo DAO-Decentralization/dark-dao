@@ -43,7 +43,7 @@ function getSnapshotVoteTypedData(address: string) {
 	return typedData;
 }
 
-describe('Snapshot EncumbrancePolicy', () => {
+describe('Snapshot Encumbrance Policy', () => {
 	async function deployWallet() {
 		// Contracts are deployed using the first signer/account by default
 		const owner = sapphire.wrap(await ethers.getSigner());

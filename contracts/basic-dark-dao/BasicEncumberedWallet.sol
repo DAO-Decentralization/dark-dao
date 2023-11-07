@@ -90,7 +90,7 @@ contract BasicEncumberedWallet is IEncumberedWallet {
         bytes calldata data
     ) public {
         // TODO: Extend to multiple encumbrance contracts
-        require(expiry > block.timestamp, "Already expired");
+        require(block.timestamp < expiry, "Already expired");
         address account = addresses[msg.sender][walletIndex];
         require(encumbranceExpiry[account] == 0 || encumbranceExpiry[account] < block.timestamp, "Already encumbered");
         // TODO: Require address to have been initialized
@@ -104,7 +104,6 @@ contract BasicEncumberedWallet is IEncumberedWallet {
     /*
     function createAndEnterEncumbrance(uint256 walletIndex, IEncumbrancePolicy policy, uint256 expiry, bytes calldata data) public {
         // TODO: Signal that the wallet was created for this purpose
-        // TODO: Vulnerable to reorg/replay attacks? Maybe add custom entropy for the policy address
         enterEncumbranceContract(walletIndex, policy, expiry, data);
     }
     */
