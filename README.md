@@ -41,6 +41,9 @@ interacting with Oasis.
 
 <img src="img/dd-token.svg" width="256" height="256">
 
+## Test out a tokenized Dark DAO Lite locally
+Coming soon!
+
 ## Run test cases locally
 Requirements:
 * Docker
@@ -92,6 +95,6 @@ The tokenized Dark DAO uses [Proveth](https://github.com/lorenzb/proveth) in its
 ### Disclaimer
 The source code contained in this repository has not been audited. It is an
 academic prototype. Our smart contracts might contain serious bugs.
-Key-encumbrance policies and Dark DAOs are novel concepts introduced in this
-prototype, so there are not yet any established standards or best practices to
+Key-encumbrance policies and Dark DAOs are novel concepts,
+so there are not yet any established standards or best practices to
 assist with safe deployment.
