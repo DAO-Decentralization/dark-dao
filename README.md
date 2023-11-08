@@ -3,6 +3,9 @@ Dark DAOs are a new way to build trustworthy vote-buying systems targeting other
 DAOs using key encumbrance. Our implementation of two kinds of Dark DAOs written
 entirely in Solidity demonstrate how simple it can be to set one up.
 
+This repository contains the Dark DAO systems described in our paper,
+[DAO Decentralization: Voting-Bloc Entropy, Bribery, and Dark DAOs](https://arxiv.org/abs/2311.03530).
+
 In this repository, we show two different Dark DAO "flavors":
 * A **Basic Dark DAO** that demonstrates simple vote-buying between a briber and vote sellers. Vote sellers must store their DAO tokens inside an encumbered account that is controlled by a key-encumbered wallet smart contract.
 * A user-friendly **Tokenized Dark DAO "Lite"** that automatically sells user voting power at auction. It is accessible to ordinary users via a liquid ERC-20 DAO token derivative. Key encumbrance is managed entirely by the Dark DAO contract.
