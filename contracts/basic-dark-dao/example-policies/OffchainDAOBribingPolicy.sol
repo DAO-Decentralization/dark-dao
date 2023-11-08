@@ -15,7 +15,7 @@ import "./OffchainDAOVoteVerifier.sol";
 contract OffchainDAOBribingPolicy is IEncumbrancePolicy {
     // @notice The encumbered wallet contract that this policy trusts
     IEncumberedWallet public walletContract;
-    // @notice Stores when
+    // @notice Stores the timestamps of when accounts entered the policy
     mapping(address => uint256) private enrollmentTime;
     // @notice A contract that parses vote messages
     OffchainDAOVoteVerifier voteVerifier;
