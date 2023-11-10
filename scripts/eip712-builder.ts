@@ -1,5 +1,5 @@
 import {ethers} from 'ethers';
-import {type BigNumberish, type HexLike} from 'ethers';
+import {type BigNumberish} from 'ethers';
 import {type TypedDataDomain, type TypedDataField} from '@ethersproject/abstract-signer';
 
 type EIP712Domain = {
@@ -7,7 +7,7 @@ type EIP712Domain = {
 	version?: string;
 	chainId?: BigNumberish;
 	verifyingContract?: string;
-	salt?: HexLike;
+	salt?: string;
 };
 
 type EIP712DomainParameters = EIP712Domain & {usedParamsMask: number};

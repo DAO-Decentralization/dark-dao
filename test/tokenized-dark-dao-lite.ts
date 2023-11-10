@@ -4,6 +4,7 @@ import {Trie} from '@ethereumjs/trie';
 import {type TransactionResponse} from '@ethersproject/abstract-provider';
 import {derToEthSignature} from '../scripts/ethereum-signatures';
 import {type PopulatedTypedData, getTypedDataParams} from '../scripts/eip712-builder';
+import {TokenizedDarkDAO, getMappingStorageSlot, getRpcUint, getRlpUint} from '../scripts/tokenized-dark-dao';
 
 const oasisTestChainId = 0x5A_FD;
 // Use a different network that supports a state proof for testing the public network
@@ -24,10 +25,6 @@ function showTransactionResult(title: string, transactionReceipt: TransactionRes
 	if (verboseContractExecution) {
 		console.log(title, 'gas usage:', transactionReceipt.gasUsed.toString());
 	}
-}
-
-function getMappingStorageSlot(mappingKey: string, mappingSlot: string): string {
-	return ethers.utils.keccak256(ethers.utils.hexConcat([ethers.utils.hexZeroPad(mappingKey, 32), ethers.utils.hexZeroPad(mappingSlot, 32)]));
 }
 
 function getSnapshotVoteTypedData(address: string, proposal: string): PopulatedTypedData {
@@ -61,14 +58,6 @@ function getSnapshotVoteTypedData(address: string, proposal: string): PopulatedT
 		},
 	};
 	return typedData;
-}
-
-function getRpcUint(number: any) {
-	return ethers.BigNumber.from(number).toHexString().replaceAll('0x0', '0x');
-}
-
-function getRlpUint(number: any) {
-	return number > 0 ? ethers.utils.RLP.encode(ethers.utils.arrayify(number)) : ethers.utils.RLP.encode('0x');
 }
 
 describe('PrivateKeyGenerator', () => {
@@ -175,45 +164,30 @@ describe('Dark DAO Token', () => {
 	}
 
 	async function depositTokens({dd, owner, ownerPublic, blockHeaderOracle, daoToken, nvDaoToken}: {dd: any; owner: ethers.Signer; ownerPublic: ethers.Signer; blockHeaderOracle: any; daoToken: any; nvDaoToken: any}, depositAmount: bigint) {
-		const nvDaoTokensRecipient = ownerPublic.address;
-		const depositData = await dd.generateDepositAddress(nvDaoTokensRecipient);
+		const ddTokenRecipient = ownerPublic.address;
+
+		const tdd = await TokenizedDarkDAO.create(dd, nvDaoToken, daoTokenBalanceMappingSlot);
+		const depositData = await tdd.getDepositAddress(ddTokenRecipient);
 		console.log('Deposit address:', depositData.depositAddress);
 
-		// Transfer nvDAO tokens to deposit address
 		showTransactionResult('Transfer DD tokens to deposit address', await daoToken.connect(ownerPublic).transfer(depositData.depositAddress, depositAmount).then(async t => t.wait()));
 		const proofBlock = await publicProvider.getBlock('latest');
 		await blockHeaderOracle.setBlockHash(proofBlock.number, proofBlock.hash);
+		const storageProof = await tdd.getDepositProof(depositData, proofBlock.number, depositAmount);
+		expect(ethers.utils.keccak256(storageProof.rlpBlockHeader)).to.equal(proofBlock.hash);
 
-		const depositStorageSlot = getMappingStorageSlot(depositData.depositAddress, daoTokenBalanceMappingSlot);
-		const proofBlockNumberRpcString = getRpcUint(proofBlock.number);
-		const proof = await publicProvider.send('eth_getProof', [daoToken.address, [depositStorageSlot], proofBlockNumberRpcString]);
-		expect(ethers.BigNumber.from(proof.storageProof[0].value).eq(depositAmount)).to.be.true;
-
-		// Get the RLP-encoded block header for this block
-		const rawProofBlockHeader = await publicProvider.send('debug_getRawHeader', [proofBlockNumberRpcString]);
-		expect(ethers.utils.keccak256(rawProofBlockHeader)).to.equal(proofBlock.hash);
-
-		// Submit a deposit proof
-		console.log('Registering deposit...');
-		const storageProof = {
-			rlpBlockHeader: rawProofBlockHeader,
-			addr: daoToken.address,
-			storageSlot: depositStorageSlot,
-			accountProofStack: ethers.utils.RLP.encode(proof.accountProof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
-			storageProofStack: ethers.utils.RLP.encode(proof.storageProof[0].proof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
-		};
 		showTransactionResult('Register deposit', await dd.registerDeposit(depositData.wrappedAddressInfo, proofBlock.number, storageProof).then(async t => t.wait()));
 		const depositReceipt = await dd.getDeposit(0);
 		console.log('Deposit receipt:', depositReceipt);
 
 		// Mint the nvDAO tokens
 		console.log(depositReceipt.signature);
-		const depositMessage = ethers.utils.defaultAbiCoder.encode(['string', 'address', 'uint256', 'bytes32'], ['deposit', nvDaoTokensRecipient, depositAmount, depositReceipt.depositId]);
+		const depositMessage = ethers.utils.defaultAbiCoder.encode(['string', 'address', 'uint256', 'bytes32'], ['deposit', ddTokenRecipient, depositAmount, depositReceipt.depositId]);
 		const depositSignature = derToEthSignature(depositReceipt.signature, ethers.utils.keccak256(depositMessage), await dd.darkDaoSignerAddress(), false);
-		showTransactionResult('Mint DD tokens', await nvDaoToken.finalizeDeposit(nvDaoTokensRecipient, depositAmount, depositReceipt.depositId, depositSignature).then(async tx => tx.wait()));
-		const nvDaoTokenBal = await nvDaoToken.balanceOf(nvDaoTokensRecipient);
+		showTransactionResult('Mint DD tokens', await nvDaoToken.finalizeDeposit(ddTokenRecipient, depositAmount, depositReceipt.depositId, depositSignature).then(async tx => tx.wait()));
+		const nvDaoTokenBal = await nvDaoToken.balanceOf(ddTokenRecipient);
 		expect(nvDaoTokenBal).to.equal(depositAmount);
-		return {depositAddress: depositData.depositAddress, nvDaoTokensRecipient};
+		return {depositAddress: depositData.depositAddress, ddTokenRecipient};
 	}
 
 	async function beginWithdrawal(ddTokenHolder, nvDaoToken, withdrawalAmount) {
@@ -256,9 +230,9 @@ describe('Dark DAO Token', () => {
 
 	async function getTxInclusionProof(blockNumber: number, txIndex: number) {
 		const rawBlock = await publicProvider.send('debug_getRawBlock', [getRpcUint(blockNumber)]);
-		const blockRLP = ethers.utils.RLP.decode(rawBlock);
-		const blockHeader: string[] = blockRLP[0];
-		const rawTransactions: string[] = blockRLP[1];
+		const blockRlp = ethers.utils.RLP.decode(rawBlock);
+		const blockHeader: string[] = blockRlp[0];
+		const rawTransactions: string[] = blockRlp[1];
 		console.log(rawTransactions);
 
 		// Build Merkle tree
@@ -339,7 +313,7 @@ describe('Dark DAO Token', () => {
 		it('Should allow a withdrawal to be registered and processed', async () => {
 			const {dd, owner, blockHeaderOracle, daoToken, nvDaoToken, ownerPublic} = await deployToken();
 			const depositAmount = (10n ** 18n) * 100n;
-			const {nvDaoTokensRecipient, depositAddress} = await depositTokens({dd, owner, blockHeaderOracle, daoToken, nvDaoToken, ownerPublic}, depositAmount);
+			const {ddTokenRecipient, depositAddress} = await depositTokens({dd, owner, blockHeaderOracle, daoToken, nvDaoToken, ownerPublic}, depositAmount);
 
 			const withdrawalAmount = depositAmount / 2n;
 			const {witness, nonceHash} = await beginWithdrawal(ownerPublic, nvDaoToken, withdrawalAmount);
@@ -373,7 +347,7 @@ describe('Dark DAO Token', () => {
 		it('Should accept withdrawal inclusion proofs', async () => {
 			const {dd, owner, blockHeaderOracle, daoToken, nvDaoToken, ownerPublic, transactionSerializer} = await deployToken();
 			const depositAmount = (10n ** 18n) * 100n;
-			const {nvDaoTokensRecipient, depositAddress} = await depositTokens({dd, owner, blockHeaderOracle, daoToken, nvDaoToken, ownerPublic}, depositAmount);
+			const {ddTokenRecipient, depositAddress} = await depositTokens({dd, owner, blockHeaderOracle, daoToken, nvDaoToken, ownerPublic}, depositAmount);
 
 			const withdrawalAmount = depositAmount / 2n;
 			const {witness, nonceHash} = await beginWithdrawal(ownerPublic, nvDaoToken, withdrawalAmount);
