@@ -45,7 +45,9 @@ interacting with Oasis.
 <img src="img/dd-token.svg" width="256" height="256">
 
 ## Test out a tokenized Dark DAO Lite locally
-Coming soon!
+See the [TokenizedDarkDAO class](scripts/tokenized-dark-dao.ts).
+
+We'll release a front-end interface soon.
 
 ## Run test cases locally
 Requirements:

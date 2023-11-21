@@ -346,8 +346,8 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
     // TODO: Leaks whether a particular account will receive DAO tokens from the Dark DAO
     function getSignedWithdrawalTransaction(
         address withdrawalRecipient
-    ) public view returns (bytes memory unsignedTx, bytes memory signature) {
-        address withdrawalAccount = accounts[withdrawalAddressIndex];
+    ) public view returns (bytes memory unsignedTx, bytes memory signature, address withdrawalAccount) {
+        withdrawalAccount = accounts[withdrawalAddressIndex];
         uint256 nonce = accountNonces[withdrawalAccount];
         uint256 amountToWithdraw = Math.min(withdrawalOwed[withdrawalRecipient], daoTokenBalance[withdrawalAccount]);
         require(amountToWithdraw > 0, "A withdrawal is not due to this account");
