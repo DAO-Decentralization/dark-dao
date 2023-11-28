@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
+import { erc20Interface } from "./abis";
 
 export function usedTimedFetcher<T>(
   fetcher: () => Promise<T>,
@@ -52,9 +53,7 @@ export const useErc20Balance = (
     async function (): Promise<string> {
       const tokenContract = new ethers.Contract(
         tokenAddress,
-        [
-          "function balanceOf(address holder) public view returns (uint256 balance)",
-        ],
+        erc20Interface,
         provider,
       );
       const balance = await tokenContract.balanceOf(holderAddress);

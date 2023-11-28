@@ -8,7 +8,10 @@ interface TokenColumnProps {
 
 const TokenColumn: FC<TokenColumnProps> = ({ height, tokenImage, caption }) => {
   return (
-    <div className="flex flex-col" style={{ width: "75px" }}>
+    <div
+      className={`flex flex-col ${height === 0 ? "hidden" : ""}`}
+      style={{ width: "75px" }}
+    >
       <p>{height}</p>
       <div
         className="transition duration-500 bg-repeat-y"

@@ -70,7 +70,7 @@ export class TokenizedDarkDAO {
 		return tdd;
 	}
 
-	async generateDepositAddress(ddTokenRecipient: string) {
+	async generateDepositAddress(ddTokenRecipient: string): Promise<{depositAddress: string; wrappedAddressInfo: string}> {
 		return this.darkDao.generateDepositAddress(ddTokenRecipient);
 	}
 
