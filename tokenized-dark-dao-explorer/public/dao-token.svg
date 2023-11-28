@@ -15,7 +15,7 @@
         font-family: "Arimo", sans-serif;
     }
   </style>
-  <circle cx="250" cy="250" r="250" fill="#DD4444" stroke="black"/>
+  <circle cx="250" cy="250" r="235" fill="#DD4444" stroke="black" stroke-width="10"/>
   <text class="dao-token-text" fill="#DDDDFF" x="50%" y="210" dominant-baseline="middle" text-anchor="middle">
     <tspan x="250">DAO</tspan><tspan x="250" dy="1.1em">Token</tspan>
   </text>
