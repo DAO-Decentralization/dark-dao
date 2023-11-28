@@ -51,7 +51,7 @@ export function derToEthSignature(signature: string, messageOrDigest: string, ex
 		pieces.push(piece);
 	}
 
-	let ethSig = null;
+	let ethSig = undefined;
 	for (let i = 0; i < 2; i++) {
 		const potentialSignature = ethers.utils.hexConcat([...pieces, ethers.utils.hexlify(0x1B + i)]);
 		try {

@@ -1,8 +1,8 @@
-import {ethers} from 'ethers';
+import {ethers, BytesLike} from 'ethers';
 import {Trie} from '@ethereumjs/trie';
 import {derToEthSignature} from './ethereum-signatures';
 
-export function getMappingStorageSlot(mappingKey: string | number, mappingSlot: string | number): string {
+export function getMappingStorageSlot(mappingKey: BytesLike, mappingSlot: BytesLike): string {
 	return ethers.utils.keccak256(ethers.utils.hexConcat([ethers.utils.hexZeroPad(mappingKey, 32), ethers.utils.hexZeroPad(mappingSlot, 32)]));
 }
 
@@ -14,7 +14,7 @@ export function getRlpUint(number: any): string {
 	return number > 0 ? ethers.utils.RLP.encode(ethers.utils.arrayify(number)) : ethers.utils.RLP.encode('0x');
 }
 
-export async function getTxInclusionProof(provider: ethers.providers.JsonRpcProvider, blockNumber: number, txIndex: number): {rlpBlockHeader: string; proof: string[]} {
+export async function getTxInclusionProof(provider: ethers.providers.JsonRpcProvider, blockNumber: number, txIndex: number): Promise<{rlpBlockHeader: string; proof: string[]}> {
 	const rawBlock = await provider.send('debug_getRawBlock', [getRpcUint(blockNumber)]);
 	const blockRlp = ethers.utils.RLP.decode(rawBlock);
 	const blockHeader: string[] = blockRlp[0];
@@ -23,7 +23,7 @@ export async function getTxInclusionProof(provider: ethers.providers.JsonRpcProv
 	// Build Merkle tree
 	const trie = new Trie();
 	for (const [i, rawTransaction] of rawTransactions.entries()) {
-		await trie.put(getRlpUint(i), rawTransaction);
+		await trie.put(ethers.utils.arrayify(getRlpUint(i)), ethers.utils.arrayify(rawTransaction));
 	}
 
 	// Ensure the transaction root was constructed the same way
@@ -37,7 +37,7 @@ export async function getTxInclusionProof(provider: ethers.providers.JsonRpcProv
 	}
 
 	// Generate the proof of the transaction
-	const txProof = await trie.createProof(getRlpUint(txIndex));
+	const txProof = await trie.createProof(ethers.utils.arrayify(getRlpUint(txIndex)));
 	const txProofHex = txProof.map(x => ethers.utils.hexlify(x));
 	return {
 		rlpBlockHeader: ethers.utils.RLP.encode(blockHeader),
@@ -52,7 +52,13 @@ export class TokenizedDarkDAO {
 	daoTokenBalanceMappingSlot: string;
 	ddTokenWithdrawalsSlot: string;
 
-	private constructor() {}
+	private constructor() {
+	    this.darkDao = new ethers.Contract("0x0000000000000000000000000000000000000000", []);
+	    this.ddToken = new ethers.Contract("0x0000000000000000000000000000000000000000", []);
+	    this.targetDaoTokenAddress = "";
+	    this.daoTokenBalanceMappingSlot = "";
+	    this.ddTokenWithdrawalsSlot = "";
+	}
 
 	public static async create(darkDao: ethers.Contract, ddToken: ethers.Contract, daoTokenBalanceMappingSlot: string, ddTokenWithdrawalsSlot: string): Promise<TokenizedDarkDAO> {
 		const tdd = new TokenizedDarkDAO();
@@ -87,8 +93,8 @@ export class TokenizedDarkDAO {
 			rlpBlockHeader: rawProofBlockHeader,
 			addr: this.targetDaoTokenAddress,
 			storageSlot: depositStorageSlot,
-			accountProofStack: ethers.utils.RLP.encode(proof.accountProof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
-			storageProofStack: ethers.utils.RLP.encode(proof.storageProof[0].proof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
+			accountProofStack: ethers.utils.RLP.encode(proof.accountProof.map((rlpValue: string) => ethers.utils.RLP.decode(rlpValue))),
+			storageProofStack: ethers.utils.RLP.encode(proof.storageProof[0].proof.map((rlpValue: string) => ethers.utils.RLP.decode(rlpValue))),
 		};
 		return storageProof;
 	}
@@ -134,14 +140,14 @@ export class TokenizedDarkDAO {
 			rlpBlockHeader: rawProofBlockHeader,
 			addr: this.ddToken.address,
 			storageSlot: withdrawalStorageSlot,
-			accountProofStack: ethers.utils.RLP.encode(proof.accountProof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
-			storageProofStack: ethers.utils.RLP.encode(proof.storageProof[0].proof.map(rlpValue => ethers.utils.RLP.decode(rlpValue))),
+			accountProofStack: ethers.utils.RLP.encode(proof.accountProof.map((rlpValue: string) => ethers.utils.RLP.decode(rlpValue))),
+			storageProofStack: ethers.utils.RLP.encode(proof.storageProof[0].proof.map((rlpValue: string) => ethers.utils.RLP.decode(rlpValue))),
 		};
 
 		return this.darkDao.registerWithdrawal(ddTokenHolder, withdrawalAmount, nonceHash, witness, daoTokenRecipient, bribesRecipient, proofBlock.number, storageProof);
 	}
 
-	async getWithdrawalTransaction(withdrawalRecipient: string): string {
+	async getWithdrawalTransaction(withdrawalRecipient: string): Promise<string> {
 		const withdrawalTx = await this.darkDao.getSignedWithdrawalTransaction(withdrawalRecipient);
 		const ethSig = derToEthSignature(withdrawalTx.signature, ethers.utils.keccak256(withdrawalTx.unsignedTx), withdrawalTx.withdrawalAccount, false);
 		const signedWithdrawalTxRaw = ethers.utils.serializeTransaction(ethers.utils.parseTransaction(withdrawalTx.unsignedTx), ethSig);
@@ -151,7 +157,7 @@ export class TokenizedDarkDAO {
 	async proveWithdrawalInclusion(txHash: string) {
 		const signedWithdrawalTx = await this.ddToken.provider.getTransaction(txHash);
 		const txReceipt = await this.ddToken.provider.getTransactionReceipt(txHash);
-		const {proof, rlpBlockHeader} = await getTxInclusionProof(this.ddToken.provider, txReceipt.blockNumber, txReceipt.transactionIndex);
+		const {proof, rlpBlockHeader} = await getTxInclusionProof(this.ddToken.provider as ethers.providers.JsonRpcProvider, txReceipt.blockNumber, txReceipt.transactionIndex);
 		console.log('Transaction inclusion proof:', proof);
 
 		// Submit proof to Dark DAO!
