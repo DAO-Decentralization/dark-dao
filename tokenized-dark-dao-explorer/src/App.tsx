@@ -1,6 +1,10 @@
 import { useState, useContext } from "react";
 import { ethers } from "ethers";
-import { TransactionReceipt } from "@ethersproject/providers";
+import {
+  TransactionReceipt,
+  TransactionResponse,
+} from "@ethersproject/providers";
+import * as sapphire from "@oasisprotocol/sapphire-paratime";
 import { FaSpinner } from "react-icons/fa";
 import "./App.css";
 import Erc20TokenColumn from "./components/Erc20TokenColumn";
@@ -18,13 +22,22 @@ interface DepositInfo {
   deposited: boolean;
   depositInProgress: boolean;
   receipt?: TransactionReceipt;
+  submittedProof: boolean;
+  proofInProgress: boolean;
+  proofIndex: number;
+  mintAuth: boolean;
+  mintInProgress: boolean;
+  minted: boolean;
 }
 
 function App() {
   const [tdd, setTdd] = useState<TokenizedDarkDAO | null>(null);
+  const [blockHeaderOracle, setBlockHeaderOracle] =
+    useState<ethers.Contract | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deployStatus, setDeployStatus] = useState<number>(0);
   const [depositAddresses, setDepositAddresses] = useState<DepositInfo[]>([]);
+  const [proofIndexCount, setProofIndexCount] = useState<number>(0);
 
   const providers = useContext(ProviderContext);
 
@@ -33,13 +46,14 @@ function App() {
       const {
         tdd,
         daoToken: _daoToken,
-        blockHeaderOracle: _blockHeaderOracle,
+        blockHeaderOracle,
       } = await deployTdd(
         providers.ethWallet.connect(providers.ethProvider),
-        providers.oasisWallet.connect(providers.oasisProvider),
+        sapphire.wrap(providers.oasisWallet.connect(providers.oasisProvider)),
         (status: number) => setDeployStatus(status),
       );
       setTdd(tdd);
+      setBlockHeaderOracle(blockHeaderOracle);
     } catch (error: any) {
       setError(error.toString());
     }
@@ -55,7 +69,17 @@ function App() {
       );
       const newDepositAddresses = [
         ...depositAddresses,
-        { ...depositInfo, deposited: false, depositInProgress: false },
+        {
+          ...depositInfo,
+          deposited: false,
+          depositInProgress: false,
+          submittedProof: false,
+          proofInProgress: false,
+          proofIndex: 0,
+          mintAuth: false,
+          mintInProgress: false,
+          minted: false,
+        },
       ];
       setDepositAddresses(newDepositAddresses);
     } catch (error: any) {
@@ -69,7 +93,6 @@ function App() {
         throw new Error("Tokenized Dark DAO not set up yet");
       }
       let newDepositAddresses = [...depositAddresses];
-      newDepositAddresses[index].deposited = true;
       newDepositAddresses[index].depositInProgress = true;
       setDepositAddresses(newDepositAddresses);
 
@@ -86,6 +109,7 @@ function App() {
       const transferReceipt = await transferTx.wait();
 
       newDepositAddresses = [...depositAddresses];
+      newDepositAddresses[index].deposited = true;
       newDepositAddresses[index].depositInProgress = false;
       newDepositAddresses[index].receipt = transferReceipt;
       setDepositAddresses(newDepositAddresses);
@@ -94,12 +118,87 @@ function App() {
     }
   }
 
+  async function proveDeposit(index: number) {
+    try {
+      if (tdd === null || blockHeaderOracle === null) {
+        throw new Error("Tokenized Dark DAO not set up yet");
+      }
+      let newDepositAddresses = [...depositAddresses];
+      newDepositAddresses[index].proofInProgress = true;
+      setDepositAddresses(newDepositAddresses);
+
+      const proofBlock = await providers.ethProvider.getBlock("latest");
+      await blockHeaderOracle
+        .setBlockHash(proofBlock.number, proofBlock.hash)
+        .then((tx: TransactionResponse) => tx.wait());
+      const proof = await tdd.getDepositProof(
+        newDepositAddresses[index],
+        proofBlock.number,
+      );
+      const registration = await tdd.registerDeposit(
+        newDepositAddresses[index].wrappedAddressInfo,
+        proofBlock.number,
+        proof,
+      );
+      const registrationReceipt = await registration.wait();
+      if (registrationReceipt.status === 0) {
+        throw new Error("registerDeposit failed");
+      }
+
+      newDepositAddresses = [...depositAddresses];
+      newDepositAddresses[index].proofInProgress = false;
+      newDepositAddresses[index].submittedProof = true;
+      newDepositAddresses[index].proofIndex = proofIndexCount;
+      setDepositAddresses(newDepositAddresses);
+      setProofIndexCount(proofIndexCount + 1);
+    } catch (error: any) {
+      let newDepositAddresses = [...depositAddresses];
+      newDepositAddresses[index].proofInProgress = false;
+      setDepositAddresses(newDepositAddresses);
+      setError(error.toString());
+      throw error;
+    }
+  }
+
+  async function mintAuth(index: number) {
+    // This is actually taken care of already in the mintDDTokens function
+    await new Promise<void>((resolve) => setTimeout(() => resolve(), 800));
+    let newDepositAddresses = [...depositAddresses];
+    newDepositAddresses[index].mintAuth = true;
+    setDepositAddresses(newDepositAddresses);
+  }
+
+  async function mint(index: number) {
+    try {
+      if (tdd === null) {
+        throw new Error("Tokenized Dark DAO not set up yet");
+      }
+      let newDepositAddresses = [...depositAddresses];
+      newDepositAddresses[index].mintInProgress = true;
+      setDepositAddresses(newDepositAddresses);
+
+      console.log(newDepositAddresses[index].proofIndex);
+      await tdd.mintDDTokens(newDepositAddresses[index].proofIndex);
+
+      newDepositAddresses = [...depositAddresses];
+      newDepositAddresses[index].mintInProgress = false;
+      newDepositAddresses[index].minted = true;
+      setDepositAddresses(newDepositAddresses);
+    } catch (error: any) {
+      let newDepositAddresses = [...depositAddresses];
+      newDepositAddresses[index].mintInProgress = false;
+      setDepositAddresses(newDepositAddresses);
+      setError(error.toString());
+      throw error;
+    }
+  }
+
   return (
     <div className="text-white">
       <h1 className="text-3xl font-semibold mb-4">
         Tokenized Dark DAO "Lite" Explorer
       </h1>
-      <div className="flex" style={{ minHeight: "500px" }}>
+      <div className="flex" style={{ minHeight: "750px" }}>
         <div className="bg-blue-600 w-3/5 text-white flex flex-col p-2">
           <h2 className="text-xl font-semibold mb-2">Ethereum</h2>
           <div className="flex flex-row items-end grow space-x-2">
@@ -131,9 +230,34 @@ function App() {
               />
             </div>
             {tdd !== null &&
-              depositAddresses.map((depositInfo: DepositInfo, index: number) =>
-                depositInfo.deposited ? (
-                  <div className="flex flex-col">
+              depositAddresses.map(
+                (depositInfo: DepositInfo, index: number) => (
+                  <div className="flex flex-col items-center" key={index}>
+                    {!depositInfo.submittedProof &&
+                      !depositInfo.proofInProgress && (
+                        <button
+                          className={`bg-blue-400 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:hover:bg-blue-400`}
+                          onClick={() => deposit(index)}
+                          disabled={depositInfo.depositInProgress}
+                        >
+                          <div className="flex inline-flex items-center">
+                            {depositInfo.depositInProgress && (
+                              <FaSpinner className="animate-spin text-gray-500 mr-2" />
+                            )}{" "}
+                            Transfer
+                          </div>
+                        </button>
+                      )}
+                    {depositInfo.mintAuth && !depositInfo.minted && (
+                      <button
+                        className={`bg-blue-400 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:hover:bg-blue-400`}
+                        onClick={() => mint(index)}
+                      >
+                        <div className="flex inline-flex items-center">
+                          Mint DD Tokens
+                        </div>
+                      </button>
+                    )}
                     <div className="flex flex-row items-end">
                       <Erc20TokenColumn
                         provider={providers.ethProvider}
@@ -141,16 +265,21 @@ function App() {
                         holderAddress={depositInfo.depositAddress}
                         tokenImage="dao-token.svg"
                         caption="DAO"
+                        forceShow={true}
                       />
                     </div>
-                    <p className="font-bold">DD Acc #{index + 1}</p>
+                    <p
+                      className={`font-bold ${
+                        depositInfo.deposited ? "text-pink-300" : ""
+                      }`}
+                    >
+                      DD Acc #{index + 1}
+                    </p>
                     <Balance
                       provider={providers.ethProvider}
                       address={depositInfo.depositAddress}
                     />
                   </div>
-                ) : (
-                  <></>
                 ),
               )}
           </div>
@@ -209,23 +338,35 @@ function App() {
               >
                 Get deposit address
               </button>
-              <div className="flex flex-row flex-wrap">
+              <div className="flex flex-row flex-wrap space-x-3">
                 {depositAddresses.map(
                   (depositInfo: DepositInfo, index: number) => (
-                    <div className="flex flex-col">
+                    <div className="flex flex-col" key={index}>
                       <p className="font-bold">DD Acc #{index + 1}</p>
-                      <button
-                        className={`bg-pink-400 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:hover:bg-pink-400`}
-                        onClick={() => deposit(index)}
-                        disabled={depositInfo.deposited}
-                      >
-                        <div className="flex inline-flex items-center">
-                          {depositInfo.depositInProgress && (
-                            <FaSpinner className="animate-spin text-gray-500 mr-2" />
-                          )}{" "}
-                          Deposit DAO tokens
-                        </div>
-                      </button>
+                      {depositInfo.deposited && !depositInfo.submittedProof && (
+                        <button
+                          className={`bg-pink-400 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:hover:bg-pink-400`}
+                          onClick={() => proveDeposit(index)}
+                          disabled={depositInfo.proofInProgress}
+                        >
+                          <div className="flex inline-flex items-center">
+                            {depositInfo.proofInProgress && (
+                              <FaSpinner className="animate-spin text-gray-500 mr-2" />
+                            )}{" "}
+                            Prove deposit
+                          </div>
+                        </button>
+                      )}
+                      {depositInfo.submittedProof && !depositInfo.mintAuth && (
+                        <button
+                          className={`bg-pink-400 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:hover:bg-pink-400`}
+                          onClick={() => mintAuth(index)}
+                        >
+                          <div className="flex inline-flex items-center">
+                            Get DD token mint auth
+                          </div>
+                        </button>
+                      )}
                     </div>
                   ),
                 )}

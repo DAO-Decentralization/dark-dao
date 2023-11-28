@@ -9,6 +9,7 @@ interface Erc20TokenColumnProps {
   holderAddress: string;
   tokenImage: string;
   caption: string;
+  forceShow?: boolean;
 }
 
 const Erc20TokenColumn: React.FC<Erc20TokenColumnProps> = ({
@@ -17,6 +18,7 @@ const Erc20TokenColumn: React.FC<Erc20TokenColumnProps> = ({
   holderAddress,
   tokenImage,
   caption,
+  forceShow,
 }) => {
   const balance = useErc20Balance(provider, tokenAddress, holderAddress);
   return (
@@ -24,6 +26,7 @@ const Erc20TokenColumn: React.FC<Erc20TokenColumnProps> = ({
       height={Number(balance)}
       tokenImage={tokenImage}
       caption={caption}
+      forceShow={forceShow}
     />
   );
 };
