@@ -4,11 +4,19 @@ Experiment with a tokenized Dark DAO
 
 ## Running
 
-First, ensure that both the geth and Oasis devnets are running, as described in the main Readme. Then, you can run the explorer with these commands:
+### Setup
+Install dependencies and ensure that the Dark DAO contracts have been compiled by Hardhat in the root directory of the repo:
+```
+# Install dependencies
+npm install
+# Ensure contract artifacts are produced
+cd .. && npx hardhat compile
+cd tokenized-dark-dao-explorer
+```
+
+Begin both the geth and Oasis devnets, as described in the main Readme. Then, you can run the explorer with these commands:
 
 ```
-# First, install dependencies
-npm install
 # Run a development web server
 npm run dev
 ```
