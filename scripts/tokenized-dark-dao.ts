@@ -1,4 +1,5 @@
-import {ethers, BytesLike} from 'ethers';
+import {ethers, type BytesLike} from 'ethers';
+import {type TransactionResponse} from '@ethersproject/providers';
 import {Trie} from '@ethereumjs/trie';
 import {derToEthSignature} from './ethereum-signatures';
 
@@ -53,11 +54,11 @@ export class TokenizedDarkDAO {
 	ddTokenWithdrawalsSlot: string;
 
 	private constructor() {
-	    this.darkDao = new ethers.Contract("0x0000000000000000000000000000000000000000", []);
-	    this.ddToken = new ethers.Contract("0x0000000000000000000000000000000000000000", []);
-	    this.targetDaoTokenAddress = "";
-	    this.daoTokenBalanceMappingSlot = "";
-	    this.ddTokenWithdrawalsSlot = "";
+	    this.darkDao = new ethers.Contract('0x0000000000000000000000000000000000000000', []);
+	    this.ddToken = new ethers.Contract('0x0000000000000000000000000000000000000000', []);
+	    this.targetDaoTokenAddress = '';
+	    this.daoTokenBalanceMappingSlot = '';
+	    this.ddTokenWithdrawalsSlot = '';
 	}
 
 	public static async create(darkDao: ethers.Contract, ddToken: ethers.Contract, daoTokenBalanceMappingSlot: string, ddTokenWithdrawalsSlot: string): Promise<TokenizedDarkDAO> {
@@ -111,14 +112,14 @@ export class TokenizedDarkDAO {
 		return this.ddToken.finalizeDeposit(depositReceipt.recipient, depositReceipt.amount, depositReceipt.depositId, depositSignature);
 	}
 
-	async beginWithdrawal(withdrawalAmount: bigint) {
+	async beginWithdrawal(withdrawalAmount: bigint): Promise<{witness: Uint8Array; nonceHash: string; tx: TransactionResponse}> {
 		const witness = ethers.utils.randomBytes(32);
 		const nonceHash = ethers.utils.keccak256(witness);
 		const tx = await this.ddToken.beginWithdrawal(withdrawalAmount, nonceHash);
 		return {witness, nonceHash, tx};
 	}
 
-	async registerWithdrawal(ddTokenHolder: string, withdrawalAmount: bigint, nonceHash: string, witness: string, daoTokenRecipient: string, bribesRecipient: string, proofBlockNumber?: number) {
+	async registerWithdrawal(ddTokenHolder: string, withdrawalAmount: bigint, nonceHash: string, witness: string | Uint8Array, daoTokenRecipient: string, bribesRecipient: string, proofBlockNumber?: number): Promise<TransactionResponse> {
 		// Calculate the storage slot
 		const withdrawalHash = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['string', 'address', 'uint256', 'bytes32'], ['withdrawal', ddTokenHolder, withdrawalAmount, nonceHash]));
 		const withdrawalStorageSlot = getMappingStorageSlot(withdrawalHash, this.ddTokenWithdrawalsSlot);
@@ -145,6 +146,10 @@ export class TokenizedDarkDAO {
 		};
 
 		return this.darkDao.registerWithdrawal(ddTokenHolder, withdrawalAmount, nonceHash, witness, daoTokenRecipient, bribesRecipient, proofBlock.number, storageProof);
+	}
+
+	async getWithdrawalOwed(recipient: string): Promise<boolean> {
+	    return this.darkDao.getWithdrawalOwed(recipient);
 	}
 
 	async getWithdrawalTransaction(withdrawalRecipient: string): Promise<string> {

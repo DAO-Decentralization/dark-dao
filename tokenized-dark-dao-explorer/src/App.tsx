@@ -15,6 +15,7 @@ import Balance from "./Balance";
 import ChecklistItem from "./components/ChecklistItem";
 import { erc20Interface } from "./abis";
 import "./PulsingButton.css";
+import { useErc20Balance, useWithdrawalOwed } from "./hooks";
 
 interface DepositInfo {
   depositAddress: string;
@@ -30,6 +31,13 @@ interface DepositInfo {
   minted: boolean;
 }
 
+interface BurnInfo {
+  witness: Uint8Array;
+  nonceHash: string;
+  tx: TransactionResponse;
+  burnAmount: bigint;
+}
+
 function App() {
   const [tdd, setTdd] = useState<TokenizedDarkDAO | null>(null);
   const [blockHeaderOracle, setBlockHeaderOracle] =
@@ -38,8 +46,16 @@ function App() {
   const [deployStatus, setDeployStatus] = useState<number>(0);
   const [depositAddresses, setDepositAddresses] = useState<DepositInfo[]>([]);
   const [proofIndexCount, setProofIndexCount] = useState<number>(0);
+  const [burnInfo, setBurnInfo] = useState<BurnInfo | null>(null);
+  const [burnInProgress, setBurnInProgress] = useState<boolean>(false);
 
   const providers = useContext(ProviderContext);
+  const ddTokenBalance = useErc20Balance(
+    providers.ethProvider,
+    tdd?.ddToken?.address,
+    providers.ethWallet.address,
+  );
+  const withdrawalOwed = useWithdrawalOwed(tdd, providers.ethWallet.address);
 
   async function deploy() {
     try {
@@ -193,6 +209,95 @@ function App() {
     }
   }
 
+  async function burn() {
+    try {
+      if (tdd === null) {
+        throw new Error("Tokenized Dark DAO not set up yet");
+      }
+      if (burnInfo !== null) {
+        throw new Error("Another burn has already begun");
+      }
+
+      setBurnInProgress(true);
+      const ddTokenContract = new ethers.Contract(
+        tdd.ddToken.address,
+        erc20Interface,
+        providers.ethWallet.connect(providers.ethProvider),
+      );
+
+      const balance = await ddTokenContract.balanceOf(
+        providers.ethWallet.address,
+      );
+      if (balance.eq(0)) {
+        return;
+      }
+      const burnAmount = balance;
+
+      const newBurnInfo = await tdd.beginWithdrawal(burnAmount);
+      await newBurnInfo.tx.wait();
+      setBurnInfo({
+        ...newBurnInfo,
+        burnAmount: BigInt(burnAmount.toString()),
+      });
+      setBurnInProgress(false);
+    } catch (error: any) {
+      setError(error.toString());
+      setBurnInProgress(false);
+      throw error;
+    }
+  }
+  async function proveBurn() {
+    try {
+      if (burnInfo === null || blockHeaderOracle === null || tdd === null) {
+        throw new Error("Burn info is not available yet");
+      }
+      const proofBlock = await providers.ethProvider.getBlock("latest");
+      await blockHeaderOracle
+        .setBlockHash(proofBlock.number, proofBlock.hash)
+        .then((tx: TransactionResponse) => tx.wait());
+
+      const withdrawalTx = await tdd.registerWithdrawal(
+        providers.ethWallet.address,
+        burnInfo.burnAmount,
+        burnInfo.nonceHash,
+        burnInfo.witness,
+        providers.ethWallet.address,
+        providers.oasisWallet.address,
+        proofBlock.number,
+      );
+      console.log(await withdrawalTx.wait());
+      setBurnInfo(null);
+    } catch (error: any) {
+      setError(error.toString());
+      throw error;
+    }
+  }
+
+  async function submitWithdrawal() {
+    try {
+      const tx = await tdd.getWithdrawalTransaction(
+        providers.ethWallet.address,
+      );
+      await providers.ethWallet
+        .connect(providers.ethProvider)
+        .sendTransaction({
+          to: ethers.utils.parseTransaction(tx).from,
+          value: ethers.utils.parseEther("0.1"),
+        })
+        .then((tx) => tx.wait());
+      const result = await providers.ethProvider.sendTransaction(tx);
+      const receipt = await result.wait();
+      await blockHeaderOracle
+        .setBlockHash(receipt.blockNumber, receipt.blockHash)
+        .then((tx: TransactionResponse) => tx.wait());
+
+      await tdd.proveWithdrawalInclusion(result.hash);
+    } catch (error: any) {
+      setError(error.toString());
+      throw error;
+    }
+  }
+
   return (
     <div className="text-white">
       <h1 className="text-3xl font-semibold mb-4">
@@ -203,6 +308,22 @@ function App() {
           <h2 className="text-xl font-semibold mb-2">Ethereum</h2>
           <div className="flex flex-row items-end grow space-x-2">
             <div className="flex flex-col items-center">
+              {ddTokenBalance &&
+                BigInt(ethers.utils.parseEther(ddTokenBalance).toString()) >
+                  0n && (
+                  <button
+                    className={`bg-blue-400 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:hover:bg-blue-400`}
+                    onClick={() => burn()}
+                    disabled={burnInProgress || burnInfo !== null}
+                  >
+                    <div className="flex inline-flex items-center">
+                      {burnInProgress && (
+                        <FaSpinner className="animate-spin text-gray-500 mr-2" />
+                      )}{" "}
+                      Redeem DD Tokens
+                    </div>
+                  </button>
+                )}
               <div className="flex flex-row items-end">
                 {tdd !== null && (
                   <>
@@ -338,6 +459,30 @@ function App() {
               >
                 Get deposit address
               </button>
+
+              {burnInfo !== null && (
+                <button
+                  className={`bg-pink-400 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:hover:bg-pink-400`}
+                  onClick={() => proveBurn()}
+                >
+                  <div className="flex inline-flex items-center">
+                    Prove DD token burn
+                  </div>
+                </button>
+              )}
+              {withdrawalOwed && (
+                <div>
+                  <div>Withdrawal owed.</div>
+                  <button
+                    className={`bg-pink-400 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:hover:bg-pink-400`}
+                    onClick={() => submitWithdrawal()}
+                  >
+                    <div className="flex inline-flex items-center">
+                      Get, fund, & send withdrawal tx
+                    </div>
+                  </button>
+                </div>
+              )}
               <div className="flex flex-row flex-wrap space-x-3">
                 {depositAddresses.map(
                   (depositInfo: DepositInfo, index: number) => (
