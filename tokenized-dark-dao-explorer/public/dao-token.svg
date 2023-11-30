@@ -1,0 +1,23 @@
+<svg width="500" height="500" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .outer-text {
+        font-size: 40px;
+        font-weight: bold;
+        font-family: "Arimo", sans-serif;
+    }
+    .dao-token-text {
+        font-size: 110px;
+        font-weight: bold;
+        font-family: "Arial", sans-serif;
+    }
+    .bribes-text {
+        font-size: 30px;
+        font-family: "Arimo", sans-serif;
+    }
+  </style>
+  <circle cx="250" cy="250" r="235" fill="#DD4444" stroke="black" stroke-width="10"/>
+  <text class="dao-token-text" fill="#DDDDFF" x="50%" y="210" dominant-baseline="middle" text-anchor="middle">
+    <tspan x="250">DAO</tspan><tspan x="250" dy="1.1em">Token</tspan>
+  </text>
+</svg>
+

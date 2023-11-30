@@ -1,0 +1,42 @@
+<svg width="500" height="500" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .outer-text {
+        font-size: 40px;
+        font-weight: bold;
+        font-family: "Arimo", sans-serif;
+    }
+    .dao-token-text {
+        font-size: 40px;
+        font-weight: bold;
+        font-family: "Arimo", sans-serif;
+    }
+    .bribes-text {
+        font-size: 30px;
+        font-family: "Arimo", sans-serif;
+    }
+  </style>
+  <circle cx="250" cy="250" r="200" fill="#FFFFDD" stroke="black"/>
+  <circle cx="250" cy="225" r="170" fill="#FFBBBB" stroke="black"/>
+  <path id="coinTop" d="M 40 250 A 210 210 0 0 1 460 250" fill="none" stroke="none"/>
+  <path id="coinBottom" d="M 40 250 A 210 210 0 0 0 460 250" fill="none" stroke="none"/>
+  <path id="coinBottomInside" d="M 60 240 A 190 190 0 0 0 440 240" fill="none" stroke="none"/>
+  <text class="outer-text" fill="black">
+       <textPath xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#coinTop" startOffset="50%" text-anchor="middle">
+           1 Dark DAO Token
+       </textPath>
+   </text>
+  <text class="dao-token-text" fill="black" x="250" y="175" text-anchor="middle">
+    <tspan x="250">1</tspan><tspan x="250" dy="1.5em">Target DAO</tspan><tspan x="250" dy="1.5em">Token</tspan>
+   </text>
+  <text class="bribes-text" fill="black">
+       <textPath xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#coinBottomInside" startOffset="50%" text-anchor="middle">
+           + accumulated voting bribes
+       </textPath>
+   </text>
+  <text class="outer-text" fill="black">
+       <textPath xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#coinBottom" startOffset="50%" text-anchor="middle" dominant-baseline="hanging">
+           
+       </textPath>
+   </text>
+</svg>
+

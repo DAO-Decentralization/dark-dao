@@ -321,6 +321,10 @@ contract VoteSellingDarkDAO is PrivateKeyGenerator, VoteAuction {
         totalDaoTokenBalance -= amount;
     }
 
+    function getWithdrawalOwed(address withdrawalRecipient) public view returns (bool) {
+        return withdrawalOwed[withdrawalRecipient] > 0;
+    }
+
     function getWithdrawalTransaction(
         uint256 nonce,
         address withdrawalRecipient,
