@@ -45,7 +45,7 @@ interacting with Oasis.
 <img src="img/dd-token.svg" width="256" height="256">
 
 ## Test out a tokenized Dark DAO Lite locally
-<img src="img/tokenized-dark-dao-explorer.png">
+<img src="img/tokenized-dark-dao-explorer.png" width="700">
 
 We created a front-end interface to let you experiment with our Tokenized Dark DAO "Lite" design locally. Follow the [setup instructions](tokenized-dark-dao-explorer/README.md) to try it out for yourself.
 
