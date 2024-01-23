@@ -8,7 +8,7 @@ contract PrivateKeyGeneratorTest is PrivateKeyGenerator {
         return ethAddressFromPublicKey(publicKey);
     }
 
-    function decompressPublicKeyExternal(bytes memory compressedPublicKey) public pure returns (bytes memory) {
+    function decompressPublicKeyExternal(bytes memory compressedPublicKey) public view returns (bytes memory) {
         return decompressPublicKey(compressedPublicKey);
     }
 }

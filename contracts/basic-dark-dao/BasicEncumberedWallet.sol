@@ -2,6 +2,7 @@
 pragma solidity >=0.8.0 <0.9.0;
 
 import "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
+import {EthereumUtils} from "@oasisprotocol/sapphire-contracts/contracts/EthereumUtils.sol";
 
 import "../elliptic-curve/EllipticCurve.sol";
 import "../elliptic-curve/Secp256k1.sol";
@@ -31,17 +32,16 @@ contract BasicEncumberedWallet is IEncumberedWallet {
         return address(uint160(uint256(publicKeyKeccak)));
     }
 
-    function decompressPublicKey(bytes calldata compressedPublicKey) public pure returns (bytes memory) {
+    function decompressPublicKey(bytes calldata compressedPublicKey) public view returns (bytes memory) {
         require(compressedPublicKey.length == 33, "Incorrect compressed pubkey format");
         return
-            abi.encodePacked(
+            bytes.concat(
                 compressedPublicKey[1:33],
-                EllipticCurve.deriveY(
-                    uint8(compressedPublicKey[0]),
-                    uint256(bytes32(compressedPublicKey[1:33])),
-                    Secp256k1.AA,
-                    Secp256k1.BB,
-                    Secp256k1.PP
+                bytes32(
+                    EthereumUtils.k256DeriveY(
+                        uint8(compressedPublicKey[0]),
+                        uint256(bytes32(compressedPublicKey[1:33]))
+                    )
                 )
             );
     }

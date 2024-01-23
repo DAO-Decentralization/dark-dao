@@ -175,8 +175,8 @@ describe('Dark DAO Token', () => {
 		const storageProof = await tdd.getDepositProof(depositData, proofBlock.number, ethers.BigNumber.from(depositAmount));
 		expect(ethers.utils.keccak256(storageProof.rlpBlockHeader)).to.equal(proofBlock.hash);
 
-		await tdd.registerDeposit(depositData.wrappedAddressInfo, proofBlock.number, storageProof).then(tx => tx.wait());
-		await tdd.mintDDTokens(0).then(tx => tx.wait());
+		showTransactionResult('Register deposit', await tdd.registerDeposit(depositData.wrappedAddressInfo, proofBlock.number, storageProof).then(tx => tx.wait()));
+		showTransactionResult('Mint DD tokens', await tdd.mintDDTokens(0).then(tx => tx.wait()));
 		const nvDaoTokenBal = await nvDaoToken.balanceOf(ddTokenRecipient);
 		expect(nvDaoTokenBal).to.equal(depositAmount);
 		return {depositAddress: depositData.depositAddress, ddTokenRecipient};

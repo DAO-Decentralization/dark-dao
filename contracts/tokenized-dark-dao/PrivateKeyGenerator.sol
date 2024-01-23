@@ -2,6 +2,7 @@
 pragma solidity ^0.8.18;
 
 import "@oasisprotocol/sapphire-contracts/contracts/Sapphire.sol";
+import {EthereumUtils} from "@oasisprotocol/sapphire-contracts/contracts/EthereumUtils.sol";
 
 import "../elliptic-curve/EllipticCurve.sol";
 import "../elliptic-curve/Secp256k1.sol";
@@ -28,7 +29,7 @@ contract PrivateKeyGenerator {
         return address(uint160(uint256(publicKeyKeccak)));
     }
 
-    function decompressPublicKey(bytes memory compressedPublicKey) internal pure returns (bytes memory) {
+    function decompressPublicKey(bytes memory compressedPublicKey) internal view returns (bytes memory) {
         require(compressedPublicKey.length == 33, "Incorrect compressed pubkey format");
 
         // Get the key (slice off leading byte)
@@ -39,17 +40,6 @@ contract PrivateKeyGenerator {
         }
 
         return
-            bytes.concat(
-                pubKeyX,
-                bytes32(
-                    EllipticCurve.deriveY(
-                        uint8(compressedPublicKey[0]),
-                        uint256(pubKeyX),
-                        Secp256k1.AA,
-                        Secp256k1.BB,
-                        Secp256k1.PP
-                    )
-                )
-            );
+            bytes.concat(pubKeyX, bytes32(EthereumUtils.k256DeriveY(uint8(compressedPublicKey[0]), uint256(pubKeyX))));
     }
 }
