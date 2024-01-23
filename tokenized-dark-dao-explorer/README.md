@@ -5,7 +5,9 @@ Experiment with a tokenized Dark DAO
 ## Running
 
 ### Setup
+
 Install dependencies and ensure that the Dark DAO contracts have been compiled by Hardhat in the root directory of the repo:
+
 ```
 # Install dependencies
 npm install

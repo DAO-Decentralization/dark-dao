@@ -48,6 +48,10 @@ function App() {
   const [proofIndexCount, setProofIndexCount] = useState<number>(0);
   const [burnInfo, setBurnInfo] = useState<BurnInfo | null>(null);
   const [burnInProgress, setBurnInProgress] = useState<boolean>(false);
+  const [proveBurnInProgress, setProveBurnInProgress] =
+    useState<boolean>(false);
+  const [withdrawalInProgress, setWithdrawalInProgress] =
+    useState<boolean>(false);
 
   const providers = useContext(ProviderContext);
   const ddTokenBalance = useErc20Balance(
@@ -251,6 +255,7 @@ function App() {
       if (burnInfo === null || blockHeaderOracle === null || tdd === null) {
         throw new Error("Burn info is not available yet");
       }
+      setProveBurnInProgress(true);
       const proofBlock = await providers.ethProvider.getBlock("latest");
       await blockHeaderOracle
         .setBlockHash(proofBlock.number, proofBlock.hash)
@@ -267,14 +272,17 @@ function App() {
       );
       console.log(await withdrawalTx.wait());
       setBurnInfo(null);
+      setProveBurnInProgress(false);
     } catch (error: any) {
       setError(error.toString());
+      setProveBurnInProgress(false);
       throw error;
     }
   }
 
   async function submitWithdrawal() {
     try {
+      setWithdrawalInProgress(true);
       const tx = await tdd.getWithdrawalTransaction(
         providers.ethWallet.address,
       );
@@ -292,8 +300,10 @@ function App() {
         .then((tx: TransactionResponse) => tx.wait());
 
       await tdd.proveWithdrawalInclusion(result.hash);
+      setWithdrawalInProgress(false);
     } catch (error: any) {
       setError(error.toString());
+      setWithdrawalInProgress(false);
       throw error;
     }
   }
@@ -464,8 +474,12 @@ function App() {
                 <button
                   className={`bg-pink-400 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:hover:bg-pink-400`}
                   onClick={() => proveBurn()}
+                  disabled={proveBurnInProgress}
                 >
                   <div className="flex inline-flex items-center">
+                    {proveBurnInProgress && (
+                      <FaSpinner className="animate-spin text-gray-500 mr-2" />
+                    )}{" "}
                     Prove DD token burn
                   </div>
                 </button>
@@ -476,8 +490,12 @@ function App() {
                   <button
                     className={`bg-pink-400 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50 disabled:hover:bg-pink-400`}
                     onClick={() => submitWithdrawal()}
+                    disabled={withdrawalInProgress}
                   >
                     <div className="flex inline-flex items-center">
+                      {withdrawalInProgress && (
+                        <FaSpinner className="animate-spin text-gray-500 mr-2" />
+                      )}{" "}
                       Get, fund, & send withdrawal tx
                     </div>
                   </button>
