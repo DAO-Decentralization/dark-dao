@@ -282,6 +282,11 @@ function App() {
 
   async function submitWithdrawal() {
     try {
+      if (tdd === null) {
+        throw new Error("Tokenized Dark DAO not set up yet");
+      } else if (blockHeaderOracle === null) {
+        throw new Error("Block header oracle does not exist");
+      }
       setWithdrawalInProgress(true);
       const tx = await tdd.getWithdrawalTransaction(
         providers.ethWallet.address,
