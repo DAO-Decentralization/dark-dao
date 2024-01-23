@@ -54,7 +54,9 @@ describe('BasicEncumberedWallet', () => {
 		it('Should not overwrite an existing wallet', async () => {
 			const {owner, wallet} = await deployWallet();
 			const createWalletTx = await wallet.createWallet(0);
-			const gasUsed1 = (await createWalletTx.wait()).gasUsed;
+			const createWalletReceipt = await createWalletTx.wait();
+			console.log("Gas cost of creating an encumbered account: " + createWalletReceipt.gasUsed);
+			const gasUsed1 = createWalletReceipt.gasUsed;
 			expect(gasUsed1.gt(100_000)).to.be.true;
 
 			const publicKey = await wallet.getPublicKey(0);
